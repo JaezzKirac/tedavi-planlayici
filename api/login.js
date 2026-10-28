@@ -1,13 +1,13 @@
 import { handle, readJson, send, fail } from "./_lib/http.js";
-import { findUser, publicUser } from "./_lib/users.js";
-import { verifyPassword } from "./_lib/password.js";
+import { findUser, passwordOf, publicUser } from "./_lib/users.js";
+import { checkPassword } from "./_lib/password.js";
 import { startSession } from "./_lib/auth.js";
 
 export default handle(async (req, res) => {
   if (req.method !== "POST") throw fail(405, "Method not allowed");
   const { username, password } = await readJson(req);
   const user = findUser(username);
-  if (!verifyPassword(String(password || ""), user?.hash)) {
+  if (!checkPassword(String(password || ""), passwordOf(user))) {
     await new Promise((r) => setTimeout(r, 400)); // deneme-yanılmayı yavaşlatır
     throw fail(401, "Wrong name or password");
   }

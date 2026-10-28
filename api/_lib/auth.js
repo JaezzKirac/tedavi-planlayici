@@ -1,17 +1,13 @@
 // İmzalı oturum çerezi (HttpOnly). Sunucu tarafında oturum tablosu gerekmez.
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { fail } from "./http.js";
+import { env } from "./secrets.js";
 import { findUser, publicUser } from "./users.js";
 
 const COOKIE = "session";
 const MAX_AGE = 7 * 24 * 3600; // saniye
 
-function secret() {
-  const s = process.env.AUTH_SECRET;
-  if (s && s.length >= 32) return s;
-  if (process.env.VERCEL || process.env.NODE_ENV === "production") throw fail(500, "AUTH_SECRET is not configured on the server");
-  return "local-development-only-secret-not-for-production";
-}
+const secret = () => env("AUTH_SECRET");
 
 const sig = (data) => createHmac("sha256", secret()).update(data).digest("base64url");
 

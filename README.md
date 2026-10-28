@@ -10,9 +10,10 @@ patient link + QR code. Generating the link saves the patient to the dashboard o
 | Thomas, Marian, Anxhela, Yağız, Adrian, Medo | staff: sees only their own patients |
 | Marko | admin: sees every patient, can filter by staff member |
 
-Initial passwords are in `staff-passwords.local.txt` (git-ignored, never commit it).
-Change a password: `npm run set-password -- marko` (random) or `npm run set-password -- marko "new password"`,
-then redeploy. To add a person, add a line to `api/_lib/users.js` and `STAFF` in `src/config.js`, then run set-password.
+Passwords and the session secret are in `api/_lib/secrets.js` (temporary, hard-coded). **Keep the GitHub repo private**,
+otherwise anyone can read them. To change a password, edit the value and redeploy. An environment variable with the
+same name (e.g. `MARKO_PASSWORD`) overrides the value in the file. To add a person, add a line to `api/_lib/users.js`,
+`STAFF` in `src/config.js` and `<ID>_PASSWORD` in `secrets.js`.
 
 ## Run locally
 ```bash
@@ -22,12 +23,11 @@ npm run build      # production build -> dist/
 ```
 
 ## Deploy to Vercel
-1. Push this folder to a GitHub repo and import it in Vercel (framework: Vite).
-2. Vercel project → **Storage** → add **Upstash for Redis** (free tier) and connect it to the project.
-   It adds `KV_REST_API_URL` and `KV_REST_API_TOKEN` automatically.
-3. Vercel project → **Settings → Environment Variables** → add `AUTH_SECRET` = a random string of 32+ characters
-   (e.g. output of `node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))"`).
-4. Redeploy.
+1. Push this folder to a **private** GitHub repo and import it in Vercel (framework: Vite). No environment variables needed.
+2. For the shared dashboard, create a free database at upstash.com → **Redis → Create database**, open its
+   **REST API** section and paste the URL and token into `UPSTASH_REDIS_REST_URL` / `UPSTASH_REDIS_REST_TOKEN`
+   in `api/_lib/secrets.js`.
+3. Push again; Vercel redeploys automatically.
 
 ## Patient links
 - Links end in `#p=...`: the plan is encoded in the link and the part after `#` is never sent to the server.
@@ -40,7 +40,7 @@ npm run build      # production build -> dist/
 api/                      Vercel serverless functions
   login.js logout.js me.js  session (signed HttpOnly cookie)
   plans.js                list / create / update patient records
-  _lib/                   users, password hashing, auth, storage (Upstash Redis or local file)
+  _lib/                   users, secrets, password check, auth, storage (Upstash Redis or local file)
 src/
   App.jsx                 patient view (#p=) or staff app (sign in, dashboard, create flow)
   config.js               clinic name / phone, staff list for the sign-in screen
@@ -51,5 +51,4 @@ src/
   data/timeline.js        treatment steps and animation timeline
   lib/share.js            link encoding / decoding
   lib/api.js              API calls
-scripts/set-password.mjs  set a staff password
 ```

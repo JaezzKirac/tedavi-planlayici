@@ -1,15 +1,16 @@
 // Tedavi planı kayıtları.
-// Üretimde Upstash Redis (Vercel'deki "Upstash for Redis" entegrasyonu ortam değişkenlerini kendisi ekler).
+// Üretimde Upstash Redis (bağlantı bilgileri api/_lib/secrets.js içinde ya da ortam değişkenlerinde).
 // Yerel geliştirmede Redis tanımlı değilse .data/db.json dosyasına yazar.
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { fail } from "./http.js";
+import { env } from "./secrets.js";
 
 const LIMIT = 500;
 
 function redisConf() {
-  const url = process.env.KV_REST_API_URL || process.env.UPSTASH_REDIS_REST_URL;
-  const token = process.env.KV_REST_API_TOKEN || process.env.UPSTASH_REDIS_REST_TOKEN;
+  const url = env("KV_REST_API_URL") || env("UPSTASH_REDIS_REST_URL");
+  const token = env("KV_REST_API_TOKEN") || env("UPSTASH_REDIS_REST_TOKEN");
   return url && token ? { url, token } : null;
 }
 
@@ -72,6 +73,6 @@ const fileStore = {
 
 export function store() {
   if (redisConf()) return redisStore;
-  if (process.env.VERCEL) throw fail(500, "Storage is not configured. Add Upstash Redis to the Vercel project.");
+  if (process.env.VERCEL) throw fail(500, "Storage is not configured. Add the Upstash Redis URL and token to api/_lib/secrets.js.");
   return fileStore;
 }

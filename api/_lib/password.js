@@ -1,18 +1,8 @@
-import { randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
+import { createHash, timingSafeEqual } from "node:crypto";
 
-// biçim: scrypt$<tuz>$<hash> (base64url)
-export function hashPassword(password) {
-  const salt = randomBytes(16);
-  return `scrypt$${salt.toString("base64url")}$${scryptSync(password, salt, 32).toString("base64url")}`;
-}
+const digest = (s) => createHash("sha256").update(String(s)).digest();
 
-const DUMMY = hashPassword("timing-equaliser");
-
-/** Şifreyi doğrular; kullanıcı yoksa da aynı sürede çalışır (kullanıcı adı tahmini zorlaşsın) */
-export function verifyPassword(password, stored) {
-  const [kind, salt, hash] = (stored || DUMMY).split("$");
-  if (kind !== "scrypt" || !salt || !hash) return false;
-  const want = Buffer.from(hash, "base64url");
-  const got = scryptSync(String(password), Buffer.from(salt, "base64url"), want.length);
-  return timingSafeEqual(got, want) && !!stored;
+/** Şifreyi sabit sürede karşılaştırır; beklenen şifre tanımlı değilse her zaman reddeder */
+export function checkPassword(given, expected) {
+  return timingSafeEqual(digest(given), digest(expected || "")) && !!expected;
 }
