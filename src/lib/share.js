@@ -4,7 +4,7 @@ import { sortedKeys, hasE, hasG, hasI, hasC, fixTx } from "../data/teeth.js";
 const b64e = (str) => btoa(unescape(encodeURIComponent(str))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 const b64d = (str) => { str = str.replace(/-/g, "+").replace(/_/g, "/"); while (str.length % 4) str += "="; return decodeURIComponent(escape(atob(str))); };
 
-export const initials = (nm) => nm.trim().split(/\s+/).map((w) => (w ? w[0].toLocaleUpperCase("tr") + "." : "")).join(" ");
+export const initials = (nm) => nm.trim().split(/\s+/).map((w) => (w ? w[0].toLocaleUpperCase("en") + "." : "")).join(" ");
 
 export function encodePlan(patient, plan, useInitials) {
   const p = sortedKeys(plan).map((n) => n + (hasE(plan, n) ? "e" : "") + (hasG(plan, n) ? "g" : "") + (hasI(plan, n) ? "i" : "") + (hasC(plan, n) ? "c" : "")).join(".");

@@ -3,17 +3,17 @@ import ToothChart from "./ToothChart.jsx";
 import { hasE, hasG, hasI, hasC, toothName, txLabel, sortedKeys, fmtDate, fixTx } from "../data/teeth.js";
 
 const TOOLS = [
-  { id: "both", label: "İmplant + Kron", dot: "linear-gradient(90deg,var(--ti) 50%,var(--crownC) 50%)" },
-  { id: "implant", label: "İmplant", dot: "var(--ti)" },
-  { id: "crown", label: "Kron", dot: "var(--crownC)" },
-  { id: "extract", label: "Çekim", dot: "var(--extC)" },
-  { id: "graft", label: "Kemik grefti", dot: "var(--graftC)" },
-  { id: "clear", label: "Sil", dot: "var(--line)" },
+  { id: "both", label: "Implant + Crown", dot: "linear-gradient(90deg,var(--ti) 50%,var(--crownC) 50%)" },
+  { id: "implant", label: "Implant", dot: "var(--ti)" },
+  { id: "crown", label: "Crown", dot: "var(--crownC)" },
+  { id: "extract", label: "Extraction", dot: "var(--extC)" },
+  { id: "graft", label: "Bone graft", dot: "var(--graftC)" },
+  { id: "clear", label: "Clear", dot: "var(--line)" },
 ];
 
 export default function ChartScreen({ patient, plan, setPlan, onBack, onNext }) {
   const [tool, setTool] = useState("both");
-  const [hint, setHint] = useState("Bir araç seçin ve dişe dokunun. Aynı dişe tekrar dokunmak işareti kaldırır.");
+  const [hint, setHint] = useState("Pick a tool and tap a tooth. Tapping the same tooth again removes the mark.");
   const keys = sortedKeys(plan);
 
   function toggle(n) {
@@ -32,7 +32,7 @@ export default function ChartScreen({ patient, plan, setPlan, onBack, onNext }) 
       if (cur.ext || cur.grf || cur.imp || cur.crw) next[n] = cur; else delete next[n];
     }
     setPlan(next);
-    setHint(next[n] ? `${n} · ${toothName(n)} → ${txLabel(next, n)}${note}` : `${n} · ${toothName(n)} → işaret kaldırıldı`);
+    setHint(next[n] ? `${n} · ${toothName(n)} → ${txLabel(next, n)}${note}` : `${n} · ${toothName(n)} → mark removed`);
   }
 
   function remove(n) { const next = { ...plan }; delete next[n]; setPlan(next); }
@@ -43,9 +43,9 @@ export default function ChartScreen({ patient, plan, setPlan, onBack, onNext }) 
         <div className="chart-head">
           <div>
             <div className="label">{patient.name}{patient.date ? " · " + fmtDate(patient.date) : ""}</div>
-            <h2>Diş şeması</h2>
+            <h2>Dental chart</h2>
           </div>
-          <div className="tools" role="group" aria-label="Tedavi aracı">
+          <div className="tools" role="group" aria-label="Treatment tool">
             {TOOLS.map((t) => (
               <button key={t.id} type="button" aria-pressed={tool === t.id} onClick={() => setTool(t.id)}>
                 <span className="dot" style={{ background: t.dot }} />{t.label}
@@ -58,7 +58,7 @@ export default function ChartScreen({ patient, plan, setPlan, onBack, onNext }) 
       </div>
       <div className="side">
         <div className="card">
-          <div className="label">Seçilen tedaviler</div>
+          <div className="label">Selected treatments</div>
           {keys.length ? (
             <ul className="plist">
               {keys.map((n) => (
@@ -66,23 +66,23 @@ export default function ChartScreen({ patient, plan, setPlan, onBack, onNext }) 
                   <span className="fdi">{n}</span>
                   <span className="nm">{toothName(n)}
                     <small>
-                      {hasE(plan, n) && <span className="tag ext">ÇEKİM</span>}{" "}
-                      {hasG(plan, n) && <span className="tag grf">GREFT</span>}{" "}
-                      {hasI(plan, n) && <span className="tag imp">İMPLANT</span>}{" "}
-                      {hasC(plan, n) && <span className="tag crw">KRON</span>}
+                      {hasE(plan, n) && <span className="tag ext">EXTRACTION</span>}{" "}
+                      {hasG(plan, n) && <span className="tag grf">GRAFT</span>}{" "}
+                      {hasI(plan, n) && <span className="tag imp">IMPLANT</span>}{" "}
+                      {hasC(plan, n) && <span className="tag crw">CROWN</span>}
                     </small>
                   </span>
-                  <button className="x" type="button" onClick={() => remove(n)} aria-label={`${n} numaralı dişi kaldır`}>×</button>
+                  <button className="x" type="button" onClick={() => remove(n)} aria-label={`Remove tooth ${n}`}>×</button>
                 </li>
               ))}
             </ul>
           ) : (
-            <p className="empty">Henüz diş seçilmedi.</p>
+            <p className="empty">No teeth selected yet.</p>
           )}
-          <button className="btn" type="button" disabled={!keys.length} onClick={onNext}>Tedavi planını oluştur →</button>
-          <button className="btn ghost" type="button" onClick={onBack}>← Hasta bilgileri</button>
+          <button className="btn" type="button" disabled={!keys.length} onClick={onNext}>Create treatment plan →</button>
+          <button className="btn ghost" type="button" onClick={onBack}>← Patient details</button>
         </div>
-        <p className="note">Numaralar FDI sistemine göredir: 1 üst sağ, 2 üst sol, 3 alt sol, 4 alt sağ çeyrek. Şema hastaya bakıyormuş gibi çizilmiştir.</p>
+        <p className="note">Numbers follow the FDI system: quadrant 1 upper right, 2 upper left, 3 lower left, 4 lower right. The chart is drawn as if you are facing the patient.</p>
       </div>
     </section>
   );

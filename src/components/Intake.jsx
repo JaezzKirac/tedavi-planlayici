@@ -13,28 +13,28 @@ export default function Intake({ patient, onChange, onSubmit, onDemo }) {
 
   return (
     <section className="card intake">
-      <div className="label">Yeni tedavi planı</div>
-      <h1>Hasta bilgileri</h1>
-      <p>Hastanın adını girin, ardından diş şemasında tedavi edilecek dişleri işaretleyin.</p>
+      <div className="label">New treatment plan</div>
+      <h1>Patient details</h1>
+      <p>Enter the patient's name, then mark the teeth to treat on the dental chart.</p>
       <form onSubmit={submit} noValidate style={{ display: "grid", gap: 14 }}>
         <div className="field">
-          <label className="label" htmlFor="pname">Ad soyad</label>
-          <input id="pname" autoComplete="off" placeholder="Örn. Ayşe Yılmaz" value={patient.name} onChange={set("name")} autoFocus />
+          <label className="label" htmlFor="pname">Full name</label>
+          <input id="pname" autoComplete="off" placeholder="e.g. Jane Smith" value={patient.name} onChange={set("name")} autoFocus />
         </div>
         <div className="row2">
           <div className="field">
-            <label className="label" htmlFor="pdate">Tarih</label>
+            <label className="label" htmlFor="pdate">Date</label>
             <input id="pdate" type="date" value={patient.date} onChange={set("date")} />
           </div>
           <div className="field">
-            <label className="label" htmlFor="pdoc">Hekim</label>
-            <input id="pdoc" autoComplete="off" placeholder="Dt. …" value={patient.doc} onChange={set("doc")} />
+            <label className="label" htmlFor="pdoc">Dentist</label>
+            <input id="pdoc" autoComplete="off" placeholder="Dr. …" value={patient.doc} onChange={set("doc")} />
           </div>
         </div>
-        {err && <p className="err">Devam etmek için hastanın adını yazın.</p>}
+        {err && <p className="err">Enter the patient's name to continue.</p>}
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
-          <button className="btn" type="submit">Diş şemasını aç →</button>
-          <button className="btn link" type="button" onClick={onDemo}>Örnek hasta ile dene</button>
+          <button className="btn" type="submit">Open dental chart →</button>
+          <button className="btn link" type="button" onClick={onDemo}>Try with a sample patient</button>
         </div>
       </form>
     </section>

@@ -49,21 +49,21 @@ function Mouth() {
       <path d={`M${CX} 100 L${CX} 200`} className="rugae" />
       <path className="gumline" d={arcPath(ARCH.U, true)} strokeWidth="50" />
       <path className="gumline" d={arcPath(ARCH.L, false)} strokeWidth="48" />
-      <text className="qlabel" x="18" y="26">SAĞ</text>
-      <text className="qlabel" x="502" y="26" textAnchor="end">SOL</text>
-      <text className="qlabel" x={CX} y="305" textAnchor="middle">ÜST ÇENE ↑ · ↓ ALT ÇENE</text>
+      <text className="qlabel" x="18" y="26">RIGHT</text>
+      <text className="qlabel" x="502" y="26" textAnchor="end">LEFT</text>
+      <text className="qlabel" x={CX} y="305" textAnchor="middle">UPPER JAW ↑ · ↓ LOWER JAW</text>
     </>
   );
 }
 
 export default function ToothChart({ plan, onToggle }) {
   return (
-    <svg className="chart enter" viewBox="0 0 520 620" role="group" aria-label="Diş şeması">
+    <svg className="chart enter" viewBox="0 0 520 620" role="group" aria-label="Dental chart">
       <Mouth />
       {TEETH.map((t, i) => {
         const [w, h] = SZ[t.k - 1], r = Math.max(w, h), vis = visFor(plan, t.n);
         const op = (k) => ({ opacity: vis[k] ? 1 : 0 });
-        const state = plan[t.n] ? txLabel(plan, t.n) : "işaretsiz";
+        const state = plan[t.n] ? txLabel(plan, t.n) : "unmarked";
         return (
           <g
             key={t.n}

@@ -1,7 +1,7 @@
 // Diş şeması geometrisi (FDI numaralandırma) ve yardımcılar
 
-export const NAMES = ["orta kesici", "yan kesici", "köpek dişi", "1. küçük azı", "2. küçük azı", "1. büyük azı", "2. büyük azı", "20 yaş dişi"];
-export const QN = { 1: "Üst sağ", 2: "Üst sol", 3: "Alt sol", 4: "Alt sağ" };
+export const NAMES = ["central incisor", "lateral incisor", "canine", "first premolar", "second premolar", "first molar", "second molar", "wisdom tooth"];
+export const QN = { 1: "Upper right", 2: "Upper left", 3: "Lower left", 4: "Lower right" };
 
 const PHI = [5, 15, 25.5, 35.5, 46, 59, 73, 87];
 export const SZ = [[11, 7], [9, 7], [9, 9], [11, 10], [11, 10], [16, 15], [15, 14], [14, 13]];
@@ -31,7 +31,7 @@ export const hasE = (plan, n) => !!(plan[n] && plan[n].ext);
 export const hasG = (plan, n) => !!(plan[n] && plan[n].grf);
 export const hasI = (plan, n) => !!(plan[n] && plan[n].imp);
 export const hasC = (plan, n) => !!(plan[n] && plan[n].crw);
-export const txLabel = (plan, n) => [hasE(plan, n) && "Çekim", hasG(plan, n) && "Kemik grefti", hasI(plan, n) && "İmplant", hasC(plan, n) && "Kron"].filter(Boolean).join(" + ");
+export const txLabel = (plan, n) => [hasE(plan, n) && "Extraction", hasG(plan, n) && "Bone graft", hasI(plan, n) && "Implant", hasC(plan, n) && "Crown"].filter(Boolean).join(" + ");
 
 /**
  * Geçersiz kombinasyonları düzeltir: çekilen dişe kron ve çekim yapılmayan bölgeye greft ancak implantla yapılır.
@@ -40,15 +40,16 @@ export const txLabel = (plan, n) => [hasE(plan, n) && "Çekim", hasG(plan, n) &&
 export function fixTx(cur, impOff) {
   const needC = cur.ext && cur.crw, needG = cur.grf && !cur.ext;
   if (cur.imp || !(needC || needG)) return "";
-  if (impOff) { if (needC) cur.crw = 0; if (needG) cur.grf = 0; return " (implantsız yapılamayan işlemler de kaldırıldı)"; }
+  if (impOff) { if (needC) cur.crw = 0; if (needG) cur.grf = 0; return " (treatments that need an implant were removed too)"; }
   cur.imp = 1;
-  return " (implant eklendi)";
+  return " (implant added)";
 }
 export const sortedKeys = (plan) => Object.keys(plan).map(Number).sort((a, b) => a - b);
 
-export const fmtDate = (d) => { if (!d) return ""; const [y, m, g] = d.split("-"); return `${g}.${m}.${y}`; };
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+export const fmtDate = (d) => { if (!d) return ""; const [y, m, g] = d.split("-"); return `${+g} ${MONTHS[+m - 1] || m} ${y}`; };
 
 export const DEMO = {
-  patient: { name: "Ayşe Yılmaz", doc: "Dt. Mert Kaya" },
+  patient: { name: "Jane Smith" },
   plan: { 36: { ext: 1, grf: 1, imp: 1, crw: 1 }, 37: { imp: 1, crw: 1 }, 46: { imp: 0, crw: 1 }, 14: { imp: 1, crw: 1 }, 24: { grf: 1, imp: 1, crw: 0 }, 48: { ext: 1 } },
 };

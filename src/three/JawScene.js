@@ -528,7 +528,7 @@ export function createJawScene({ canvas, container, labelEl, leaderEl, xrayEl, d
         if (L < 40) { dx = 1; dy = 0; L = 1; }
         const D = W < 520 ? 80 : 120;
         const lx = Math.min(W - 56, Math.max(56, sx + dx / L * D)), ly = Math.min(H - 64, Math.max(48, sy + dy / L * D));
-        labelEl.hidden = false; labelEl.textContent = `Diş ${e.focus}`;
+        labelEl.hidden = false; labelEl.textContent = `Tooth ${e.focus}`;
         labelEl.style.left = lx + "px"; labelEl.style.top = ly + "px";
         if (leaderEl) {
           const vx = sx - lx, vy = sy - ly, len = Math.hypot(vx, vy) - 14;

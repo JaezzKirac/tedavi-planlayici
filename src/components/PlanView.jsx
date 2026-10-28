@@ -7,7 +7,7 @@ import { CLINIC } from "../config.js";
 const PlayIcon = () => <path d="M8 5v14l11-7z" />;
 const PauseIcon = () => <path d="M7 5h4v14H7zM13 5h4v14h-4z" />;
 
-export default function PlanView({ patient, plan, patientMode, onEdit, onNew }) {
+export default function PlanView({ patient, plan, patientMode, onEdit, onNew, recordId, onSaved }) {
   const tl = useMemo(() => buildTimeline(plan), [plan]);
   const tlRef = useRef(tl);
   tlRef.current = tl;
@@ -89,21 +89,21 @@ export default function PlanView({ patient, plan, patientMode, onEdit, onNew }) 
   let focusN = e.focus;
   for (let i = idx; i >= 0 && !focusN; i--) focusN = tl.TL[i].focus;
   if (!focusN) focusN = tl.keys[0];
-  const cal = e.ch === "heal" ? `İyileşme · ${week}. hafta` : e.ch === "gheal" ? `Kemikleşme · ${week + 1}. ay` : info.cal;
+  const cal = e.ch === "heal" ? `Healing · week ${week}` : e.ch === "gheal" ? `Bone maturation · month ${week + 1}` : info.cal;
   const extra = (e.ch === "ext" && hasI(plan, e.focus) && info.pImp) || (e.ch === "graft" && hasE(plan, e.focus) && info.pExt);
 
   return (
     <section style={{ display: "grid", gap: 18 }}>
       <div className="planhead">
         <div>
-          <div className="label">{patientMode ? "Tedavi planınız" : "Kişisel tedavi planı"}</div>
+          <div className="label">{patientMode ? "Your treatment plan" : "Personal treatment plan"}</div>
           <h1>{patient.name}</h1>
-          <div className="meta">{[patient.date && fmtDate(patient.date), patient.doc, `${tl.keys.length} diş`].filter(Boolean).join(" · ")}</div>
+          <div className="meta">{[patient.date && fmtDate(patient.date), patient.doc, `${tl.keys.length} ${tl.keys.length === 1 ? "tooth" : "teeth"}`].filter(Boolean).join(" · ")}</div>
         </div>
         {!patientMode && (
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-            <button className="btn ghost" type="button" onClick={() => { pause(); onEdit(); }}>← Şemayı düzenle</button>
-            <button className="btn ghost" type="button" onClick={() => { pause(); onNew(); }}>Yeni hasta</button>
+            <button className="btn ghost" type="button" onClick={() => { pause(); onEdit(); }}>← Edit chart</button>
+            <button className="btn ghost" type="button" onClick={() => { pause(); onNew(); }}>New patient</button>
           </div>
         )}
       </div>
@@ -111,30 +111,30 @@ export default function PlanView({ patient, plan, patientMode, onEdit, onNew }) 
       <div className="layout">
         <div className="card player">
           <div className="stage3d" ref={stageRef}>
-            <canvas ref={canvasRef} className="gl" aria-label="3D tedavi animasyonu" />
+            <canvas ref={canvasRef} className="gl" aria-label="3D treatment animation" />
             <span className="chip overlay-chip">{cal}</span>
-            <span className="chip xray" ref={xrayRef} hidden>Röntgen görünüm</span>
+            <span className="chip xray" ref={xrayRef} hidden>X-ray view</span>
             <div className="tleader" ref={leaderRef} hidden />
             <div className="tlabel" ref={labelRef} />
-            <div className="hint3d">Sürükle: döndür · Sağ tık / iki parmak: kaydır · Tekerlek: yakınlaş</div>
+            <div className="hint3d">Drag: rotate · Right-click / two fingers: pan · Scroll: zoom</div>
             <div className="camtools">
-              <button type="button" onClick={() => sceneRef.current?.camOverview()}>Genel görünüm</button>
-              {focusN && <button type="button" onClick={() => sceneRef.current?.camTooth(focusN)}>{`Dişe yaklaş · ${focusN}`}</button>}
+              <button type="button" onClick={() => sceneRef.current?.camOverview()}>Overview</button>
+              {focusN && <button type="button" onClick={() => sceneRef.current?.camTooth(focusN)}>{`Zoom to tooth ${focusN}`}</button>}
             </div>
             {!started && !glError && (
-              <button className="bigplay" type="button" aria-label="Oynat" onClick={play}>
+              <button className="bigplay" type="button" aria-label="Play" onClick={play}>
                 <svg viewBox="0 0 24 24" fill="currentColor"><path d="M7 4v16l13-8z" /></svg>
               </button>
             )}
-            {glError && <p className="glerr">3D görünüm bu cihazda açılamadı. Güncel bir tarayıcıda tekrar deneyin.</p>}
+            {glError && <p className="glerr">The 3D view could not start on this device. Please try again in an up-to-date browser.</p>}
           </div>
           <div className="caption swap" key={idx} aria-live="polite">
-            <span className="num2">{`AŞAMA ${ci + 1} / ${tl.CH.length} · ${info.d}`}</span>
-            <h3>{info.t + (e.focus ? ` · ${e.focus} numaralı diş` : "")}</h3>
+            <span className="num2">{`STEP ${ci + 1} / ${tl.CH.length} · ${info.d}`}</span>
+            <h3>{info.t + (e.focus ? ` · tooth ${e.focus}` : "")}</h3>
             <p>{info.p + (extra ? " " + extra : "")}</p>
           </div>
           <div className="controls">
-            <button className="pbtn" type="button" aria-label={playing ? "Duraklat" : "Oynat"} onClick={() => (playing ? pause() : play())}>
+            <button className="pbtn" type="button" aria-label={playing ? "Pause" : "Play"} onClick={() => (playing ? pause() : play())}>
               <svg viewBox="0 0 24 24" fill="currentColor">{playing ? <PauseIcon /> : <PlayIcon />}</svg>
             </button>
             <div
@@ -142,7 +142,7 @@ export default function PlanView({ patient, plan, patientMode, onEdit, onNew }) 
               ref={trackRef}
               role="slider"
               tabIndex={0}
-              aria-label="Animasyon zamanı"
+              aria-label="Animation time"
               aria-valuemin={0}
               aria-valuemax={Math.round(tl.TOTAL / 1000)}
               onKeyDown={onTrackKey}
@@ -161,7 +161,7 @@ export default function PlanView({ patient, plan, patientMode, onEdit, onNew }) 
 
         <div className="side">
           <div className="card">
-            <div className="label">Tedavi aşamaları</div>
+            <div className="label">Treatment steps</div>
             <ol className="chapters">
               {tl.CH.map((c, i) => (
                 <li key={c.start} className={i === ci ? "active" : i < ci ? "done" : ""}>
@@ -174,15 +174,15 @@ export default function PlanView({ patient, plan, patientMode, onEdit, onNew }) 
             </ol>
           </div>
           <div className="summary">
-            {tl.exts.length > 0 && <div><span className="label">Çekim</span><b>{tl.exts.length}</b></div>}
-            {tl.grfs.length > 0 && <div><span className="label">Greft</span><b>{tl.grfs.length}</b></div>}
-            <div><span className="label">İmplant</span><b>{tl.imps.length}</b></div>
-            <div><span className="label">Kron</span><b>{tl.crws.length}</b></div>
-            <div><span className="label">Süre</span><b>{tl.grfs.length && tl.imps.length ? "7–12 ay" : tl.grfs.length ? "4–6 ay" : tl.imps.length ? "3–6 ay" : tl.crws.length ? "1–2 hafta" : "1 seans"}</b></div>
+            {tl.exts.length > 0 && <div><span className="label">Extraction</span><b>{tl.exts.length}</b></div>}
+            {tl.grfs.length > 0 && <div><span className="label">Graft</span><b>{tl.grfs.length}</b></div>}
+            <div><span className="label">Implant</span><b>{tl.imps.length}</b></div>
+            <div><span className="label">Crown</span><b>{tl.crws.length}</b></div>
+            <div><span className="label">Duration</span><b>{tl.grfs.length && tl.imps.length ? "7–12 mo" : tl.grfs.length ? "4–6 mo" : tl.imps.length ? "3–6 mo" : tl.crws.length ? "1–2 wks" : "1 visit"}</b></div>
           </div>
-          <p className="note">Süreler ortalama değerlerdir. Kemik durumu ve genel sağlığa göre hekiminiz size özel takvimi belirler.</p>
-          {!patientMode && <SharePanel patient={patient} plan={plan} />}
-          {patientMode && CLINIC.phone && <p className="note">{`Sorularınız için: ${CLINIC.name} · ${CLINIC.phone}`}</p>}
+          <p className="note">Durations are averages. Your dentist will set your personal schedule based on your bone and general health.</p>
+          {!patientMode && <SharePanel patient={patient} plan={plan} recordId={recordId} onSaved={onSaved} />}
+          {patientMode && CLINIC.phone && <p className="note">{`Questions? ${CLINIC.name} · ${CLINIC.phone}`}</p>}
         </div>
       </div>
     </section>

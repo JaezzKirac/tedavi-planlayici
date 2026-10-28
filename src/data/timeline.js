@@ -1,17 +1,17 @@
 import { sortedKeys, hasE, hasG, hasI, hasC } from "./teeth.js";
 
 export const CHINFO = {
-  scan: { t: "Muayene ve 3D tomografi", d: "1. gün · 30–45 dk", p: "Ağız taranır, dental tomografi ile kemik hacmi, sinir ve sinüs konumu ölçülür.", cal: "1. gün" },
-  ext: { t: "Dişin çekilmesi", d: "1 seans · diş başına 15–30 dk", p: "Lokal anestezi altında diş, çevresindeki kemik korunarak nazikçe yerinden oynatılır ve çekilir. İşlem sırasında ağrı hissedilmez.", pImp: "Kemik durumuna göre implant aynı seansta ya da birkaç haftalık iyileşmenin ardından yerleştirilir.", cal: "Çekim" },
-  graft: { t: "Kemik grefti uygulaması", d: "1 seans · bölge başına 30–60 dk", p: "İmplantın sağlam oturması için yetersiz olan kemik, kemik grefti (kemik tozu) ile tamamlanır. Greftin üzeri koruyucu bir zarla (membran) örtülür ve dikiş atılır. Lokal anestezi altında yapılır.", pExt: "Çekim boşluğu aynı seansta doldurulduğu için kemiğin erimesi de önlenir.", cal: "Greft" },
-  gheal: { t: "Greftin kemikleşmesi", d: "4–6 ay", p: "Greft zamanla sizin kendi kemiğinize dönüşür. Bu sürede normal hayatınıza devam edersiniz; gerekirse geçici diş kullanılır.", cal: "Kemikleşme" },
-  surgery: { t: "İmplantın yerleştirilmesi", d: "1. hafta · implant başına ~30 dk", p: "Lokal anestezi altında önce kemikte yuva açılır, ardından titanyum implant kemiğe vidalanır. İşlem sırasında ağrı hissedilmez.", cal: "1. hafta" },
-  heal: { t: "İyileşme (kemikle kaynaşma)", d: "2–4 ay", p: "İmplantlar kemikle kaynaşır. Bu sürede normal hayatınıza devam edersiniz; gerekirse geçici diş kullanılır.", cal: "İyileşme" },
-  prep: { t: "Dişin kron için hazırlanması", d: "1 seans · diş başına 30–45 dk", p: "Çürük temizlenir, dişin her yüzeyinden ince bir tabaka alınarak kronun oturacağı form verilir.", cal: "Hazırlık" },
-  abut: { t: "Dayanakların (abutment) takılması", d: "1 seans · 20–30 dk", p: "İyileşen implantların üzerine kronu taşıyacak dayanak ya da dişeti şekillendirici başlık vidalanır.", cal: "3. ay" },
-  lab: { t: "Dijital ölçü ve laboratuvar", d: "5–7 iş günü", p: "Ağız içi tarayıcı ile ölçü alınır, renk seçilir. Zirkonyum kronlar laboratuvarda üretilir.", cal: "Laboratuvar" },
-  fit: { t: "Kronun takılması", d: "1 seans · 30–45 dk", p: "Zirkonyum kron yerine oturtulur, ısırma kontrol edilir.", cal: "Son seans" },
-  done: { t: "Tedavi tamamlandı", d: "Kontrol: 6 ayda bir", p: "Yeni dişleriniz kullanıma hazır. Düzenli fırçalama ve 6 aylık kontrollerle uzun yıllar kullanılır.", cal: "✓ Tamamlandı" },
+  scan: { t: "Exam and 3D CT scan", d: "Day 1 · 30–45 min", p: "Your mouth is scanned and a dental CT measures the bone volume and the position of nerves and sinuses.", cal: "Day 1" },
+  ext: { t: "Tooth extraction", d: "1 visit · 15–30 min per tooth", p: "Under local anaesthesia the tooth is gently loosened and removed while the surrounding bone is preserved. You won't feel pain during the procedure.", pImp: "Depending on the bone, the implant is placed in the same visit or after a few weeks of healing.", cal: "Extraction" },
+  graft: { t: "Bone graft", d: "1 visit · 30–60 min per site", p: "Where there isn't enough bone to hold the implant securely, it is rebuilt with bone graft material. The graft is covered with a protective membrane and stitched. Done under local anaesthesia.", pExt: "Because the extraction socket is filled in the same visit, bone loss is prevented as well.", cal: "Graft" },
+  gheal: { t: "Graft maturation", d: "4–6 months", p: "Over time the graft turns into your own bone. You carry on with daily life as normal; a temporary tooth can be used if needed.", cal: "Bone maturation" },
+  surgery: { t: "Implant placement", d: "Week 1 · ~30 min per implant", p: "Under local anaesthesia a small channel is prepared in the bone, then the titanium implant is screwed into place. You won't feel pain during the procedure.", cal: "Week 1" },
+  heal: { t: "Healing (osseointegration)", d: "2–4 months", p: "The implants fuse with the bone. You carry on with daily life as normal; a temporary tooth can be used if needed.", cal: "Healing" },
+  prep: { t: "Preparing the tooth for a crown", d: "1 visit · 30–45 min per tooth", p: "Decay is removed and a thin layer is taken from each surface of the tooth to shape it for the crown.", cal: "Preparation" },
+  abut: { t: "Fitting the abutments", d: "1 visit · 20–30 min", p: "An abutment or healing cap that will carry the crown is screwed onto each healed implant.", cal: "Month 3" },
+  lab: { t: "Digital impression and lab", d: "5–7 working days", p: "An intraoral scanner takes the impression and the shade is chosen. The zirconia crowns are made in the lab.", cal: "Lab" },
+  fit: { t: "Fitting the crown", d: "1 visit · 30–45 min", p: "The zirconia crown is seated and your bite is checked.", cal: "Final visit" },
+  done: { t: "Treatment complete", d: "Check-up every 6 months", p: "Your new teeth are ready to use. With regular brushing and check-ups every 6 months they will last for many years.", cal: "✓ Complete" },
 };
 
 /**
