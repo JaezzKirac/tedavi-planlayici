@@ -1,4 +1,4 @@
-import { TEETH, SZ, ARCH, CX, hasE, hasG, hasI, hasC, toothName, txLabel } from "../data/teeth.js";
+import { TEETH, SZ, ARCH, CX, hasE, hasG, hasI, hasC, hasR, hasV, hasS, hasF, hasO, toothName, txLabel, inFmr } from "../data/teeth.js";
 
 // greft granülleri: dişin çevresinde küçük noktalar
 const GRAN = Array.from({ length: 9 }, (_, i) => { const a = (i / 9) * Math.PI * 2; return [Math.cos(a), Math.sin(a)]; });
@@ -17,15 +17,19 @@ function Cusps({ k }) {
   return <path className="cusp" d={`M${-w * 0.7} ${h * 0.15} Q0 ${-h * 0.15} ${w * 0.7} ${h * 0.15}`} />;
 }
 
-function visFor(plan, n) {
+function visFor(plan, n, fmr) {
+  // tam ağız restorasyonunda işaretlenmemiş diş ağızda yok demektir
+  if (inFmr(n, fmr) && !plan[n]) return { absent: 1 };
   const ext = hasE(plan, n) ? 1 : 0, grf = hasG(plan, n) ? 1 : 0;
   if (hasI(plan, n) && hasC(plan, n)) return { ccrown: 1, imp: 1, ext, grf };
   if (hasI(plan, n)) return { socket: 1, ghost: 1, imp: 1, ext, grf };
   if (hasC(plan, n)) return { ccrown: 1, ext, grf };
   // yalnız çekim: boş yuva; greftliyse (soket koruma) yuva greftle dolu
   if (ext) return { socket: 1, ext, extX: grf ? 0 : 1, grf };
-  return { nat: 1 };
+  // doğal dişe yapılan işlemler: kanal, dolgu, veneer; tam ağızda kalacak kendi dişi
+  return { nat: 1, rct: hasR(plan, n) ? 1 : 0, fil: hasF(plan, n) ? 1 : 0, ven: hasV(plan, n) ? 1 : 0, own: hasO(plan, n) ? 1 : 0 };
 }
+const sinOf = (plan, n) => (hasS(plan, n) ? 1 : 0);
 
 const arcPath = (A, up) => {
   let d = "";
@@ -56,14 +60,15 @@ function Mouth() {
   );
 }
 
-export default function ToothChart({ plan, onToggle }) {
+export default function ToothChart({ plan, fmr = null, onToggle }) {
   return (
     <svg className="chart enter" viewBox="0 0 520 620" role="group" aria-label="Dental chart">
       <Mouth />
       {TEETH.map((t, i) => {
-        const [w, h] = SZ[t.k - 1], r = Math.max(w, h), vis = visFor(plan, t.n);
+        const [w, h] = SZ[t.k - 1], r = Math.max(w, h), vis = visFor(plan, t.n, fmr);
+        vis.sin = sinOf(plan, t.n);
         const op = (k) => ({ opacity: vis[k] ? 1 : 0 });
-        const state = plan[t.n] ? txLabel(plan, t.n) : "unmarked";
+        const state = plan[t.n] ? txLabel(plan, t.n) : vis.absent ? "missing" : "unmarked";
         return (
           <g
             key={t.n}
@@ -80,6 +85,7 @@ export default function ToothChart({ plan, onToggle }) {
               <g className="a" style={op("nat")}><Shape k={t.k} cls="tshape" /><Cusps k={t.k} /></g>
               <g className="a" style={op("ccrown")}><Shape k={t.k} cls="chartcrown" /><Cusps k={t.k} /></g>
               <g className="a" style={op("ghost")}><Shape k={t.k} cls="ghostT" /></g>
+              <g className="a" style={op("absent")}><Shape k={t.k} cls="absentT" /></g>
               <g className="a" style={op("imp")}>
                 <circle className="tiC" r="7" />
                 <path className="spiral" d="M0 -5 A5 5 0 1 1 -4.3 2.5 A3.5 3.5 0 1 1 2.5 -1.5 A1.6 1.6 0 1 1 0 0" />
@@ -87,6 +93,11 @@ export default function ToothChart({ plan, onToggle }) {
               <g className="a" style={op("grf")}>
                 {GRAN.map(([cx, cy], j) => <circle key={j} className="gran" cx={cx * w * 0.62} cy={cy * h * 0.62} r={j % 2 ? 1.7 : 2.2} />)}
               </g>
+              <g className="a" style={op("ven")}><Shape k={t.k} cls="venS" /></g>
+              <path className="rctL a" style={op("rct")} d={`M0 ${-h * 0.62}V${h * 0.62}`} />
+              <circle className="filC a" style={op("fil")} r={Math.min(w, h) * 0.32} />
+              <g className="a" style={op("own")}><Shape k={t.k} cls="ownS" /></g>
+              <circle className="sinR a" style={op("sin")} r={r + 6} />
               <circle className="extR a" style={op("ext")} r={r + 3} />
               <path className="extX a" style={op("extX")} d="M-5 -5L5 5M5 -5L-5 5" />
               <circle className="hit" r={r + 6} />
@@ -95,7 +106,7 @@ export default function ToothChart({ plan, onToggle }) {
         );
       })}
       {TEETH.map((t) => (
-        <text key={t.n} className={"num" + (hasI(plan, t.n) ? " imp" : hasC(plan, t.n) ? " crw" : hasG(plan, t.n) ? " grf" : hasE(plan, t.n) ? " ext" : "")} x={t.l.x.toFixed(1)} y={t.l.y.toFixed(1)}>{t.n}</text>
+        <text key={t.n} className={"num" + (hasI(plan, t.n) ? " imp" : hasC(plan, t.n) ? " crw" : hasG(plan, t.n) ? " grf" : hasE(plan, t.n) ? " ext" : hasR(plan, t.n) ? " rct" : hasV(plan, t.n) ? " ven" : hasF(plan, t.n) ? " fil" : hasO(plan, t.n) ? " own" : "")} x={t.l.x.toFixed(1)} y={t.l.y.toFixed(1)}>{t.n}</text>
       ))}
     </svg>
   );

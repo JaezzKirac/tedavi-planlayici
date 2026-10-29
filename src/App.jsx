@@ -39,7 +39,7 @@ function PatientView({ fromUrl }) {
       <div className="top"><Brand /></div>
       {ok ? (
         <Suspense fallback={loading}>
-          <PlanView patient={fromUrl.patient} plan={fromUrl.plan} patientMode />
+          <PlanView patient={fromUrl.patient} plan={fromUrl.plan} fmr={fromUrl.fmr} patientMode />
         </Suspense>
       ) : (
         <section className="card intake">
@@ -60,6 +60,7 @@ function StaffApp() {
   const [patient, setPatient] = useState({ name: "", date: today(), doc: "" });
   const [plan, setPlan] = useState({});
   const [recordId, setRecordId] = useState(null);
+  const [fmr, setFmr] = useState(null); // tam ağız restorasyonu: { type: 4|6|8, arches: "U"|"L"|"UL" }
 
   const checkSession = () => {
     setAuthErr("");
@@ -71,10 +72,10 @@ function StaffApp() {
 
   const newPlan = () => {
     setPatient({ name: "", date: today(), doc: user?.name || "" });
-    setPlan({}); setRecordId(null); setStep(1); setView("create");
+    setPlan({}); setFmr(null); setRecordId(null); setStep(1); setView("create");
   };
   const openRecord = (rec) => {
-    setPatient(rec.patient); setPlan(rec.plan); setRecordId(rec.id); setStep(3); setView("create");
+    setPatient(rec.patient); setPlan(rec.plan); setFmr(rec.fmr || null); setRecordId(rec.id); setStep(3); setView("create");
   };
   const logout = async () => {
     try { await api.logout(); } catch { /* çerez yine de süresi dolunca geçersiz olur */ }
@@ -110,15 +111,16 @@ function StaffApp() {
             patient={patient}
             onChange={setPatient}
             onSubmit={() => setStep(2)}
-            onDemo={() => { setPatient({ ...patient, ...DEMO.patient }); setPlan(DEMO.plan); setStep(2); }}
+            onDemo={() => { setPatient({ ...patient, ...DEMO.patient }); setPlan(DEMO.plan); setFmr(null); setStep(2); }}
           />
         )}
-        {step === 2 && <ChartScreen patient={patient} plan={plan} setPlan={setPlan} onBack={() => setStep(1)} onNext={() => setStep(3)} />}
+        {step === 2 && <ChartScreen patient={patient} plan={plan} setPlan={setPlan} fmr={fmr} setFmr={setFmr} onBack={() => setStep(1)} onNext={() => setStep(3)} />}
         {step === 3 && (
           <Suspense fallback={loading}>
             <PlanView
               patient={patient}
               plan={plan}
+              fmr={fmr}
               recordId={recordId}
               onSaved={setRecordId}
               onEdit={() => setStep(2)}

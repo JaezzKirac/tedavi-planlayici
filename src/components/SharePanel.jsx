@@ -3,7 +3,7 @@ import QRCode from "qrcode";
 import { encodePlan, patientLink } from "../lib/share.js";
 import { api } from "../lib/api.js";
 
-export default function SharePanel({ patient, plan, recordId, onSaved }) {
+export default function SharePanel({ patient, plan, fmr, recordId, onSaved }) {
   // varsayılan: linkte yalnızca baş harfler
   const [useInitials, setUseInitials] = useState(true);
   const [link, setLink] = useState("");
@@ -19,10 +19,10 @@ export default function SharePanel({ patient, plan, recordId, onSaved }) {
 
   // link oluşturulduğu anda hasta, giriş yapan kişinin adına kaydedilir (aynı hasta için tekrar oluşturulursa güncellenir)
   function make(ini = useInitials) {
-    const code = encodePlan(patient, plan, ini);
+    const code = encodePlan(patient, plan, ini, fmr);
     setLink(patientLink(code));
     setSave({ state: "saving" });
-    const body = { patient, plan, code, initials: ini };
+    const body = { patient, plan, code, initials: ini, fmr };
     queue.current = queue.current.then(async () => {
       try {
         const { plan: rec } = idRef.current ? await api.updatePlan(idRef.current, body) : await api.createPlan(body);

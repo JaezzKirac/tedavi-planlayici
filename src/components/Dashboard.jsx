@@ -5,10 +5,10 @@ import { fmtDate } from "../data/teeth.js";
 import { STAFF } from "../config.js";
 
 const fmtWhen = (ms) => new Date(ms).toLocaleString("en-GB", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
-const KINDS = [["ext", "Extraction", "ext"], ["grf", "Graft", "grf"], ["imp", "Implant", "imp"], ["crw", "Crown", "crw"]];
+const KINDS = [["ext", "Extraction", "ext"], ["grf", "Graft", "grf"], ["sin", "Sinus lift", "sin"], ["imp", "Implant", "imp"], ["crw", "Crown", "crw"], ["rct", "Root canal", "rct"], ["fil", "Filling", "fil"], ["ven", "Veneer", "ven"]];
 
 function counts(plan) {
-  const c = { ext: 0, grf: 0, imp: 0, crw: 0 };
+  const c = Object.fromEntries(KINDS.map(([k]) => [k, 0]));
   Object.values(plan || {}).forEach((t) => KINDS.forEach(([k]) => { if (t[k]) c[k]++; }));
   return c;
 }
@@ -34,7 +34,7 @@ export default function Dashboard({ user, onOpen, onNew }) {
 
   const stats = useMemo(() => {
     const now = new Date(), from = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
-    const tot = { ext: 0, grf: 0, imp: 0, crw: 0 };
+    const tot = Object.fromEntries(KINDS.map(([k]) => [k, 0]));
     rows.forEach((p) => { const c = counts(p.plan); KINDS.forEach(([k]) => (tot[k] += c[k])); });
     return { patients: rows.length, month: rows.filter((p) => p.createdAt >= from).length, ...tot };
   }, [rows]);
@@ -106,6 +106,7 @@ export default function Dashboard({ user, onOpen, onNew }) {
                     <small>{[p.patient.date && fmtDate(p.patient.date), p.patient.doc].filter(Boolean).join(" · ")}</small>
                   </span>
                   <span className="tx">
+                    {p.fmr && <span className="tag fmr">{`All-on-${p.fmr.type} · ${p.fmr.arches === "UL" ? "both jaws" : p.fmr.arches === "U" ? "upper" : "lower"}`}</span>}
                     {KINDS.map(([k, label, cls]) => c[k] > 0 && <span key={k} className={"tag " + cls}>{`${c[k]} ${label}`}</span>)}
                   </span>
                   {admin && <span className="by"><span className="av" aria-hidden="true">{(p.ownerName || p.owner)[0]}</span>{p.ownerName || p.owner}</span>}

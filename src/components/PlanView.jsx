@@ -1,31 +1,30 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createJawScene } from "../three/JawScene.js";
-import { buildTimeline, CHINFO, eventIndexAt, chapterIndexAt, fmtTime } from "../data/timeline.js";
-import { fmtDate, hasE, hasI } from "../data/teeth.js";
+import { buildTimeline, chInfo, eventIndexAt, chapterIndexAt, fmtTime } from "../data/timeline.js";
+import { fmtDate, hasE, hasI, fmrLabel } from "../data/teeth.js";
 import SharePanel from "./SharePanel.jsx";
 import { CLINIC } from "../config.js";
 const PlayIcon = () => <path d="M8 5v14l11-7z" />;
 const PauseIcon = () => <path d="M7 5h4v14H7zM13 5h4v14h-4z" />;
 
-export default function PlanView({ patient, plan, patientMode, onEdit, onNew, recordId, onSaved }) {
-  const tl = useMemo(() => buildTimeline(plan), [plan]);
+export default function PlanView({ patient, plan, fmr = null, patientMode, onEdit, onNew, recordId, onSaved }) {
+  const tl = useMemo(() => buildTimeline(plan, { fmr }), [plan, fmr]);
   const tlRef = useRef(tl);
   tlRef.current = tl;
 
   const canvasRef = useRef(null), stageRef = useRef(null), labelRef = useRef(null), leaderRef = useRef(null), xrayRef = useRef(null);
   const fillRef = useRef(null), timeRef = useRef(null), trackRef = useRef(null);
   const sceneRef = useRef(null);
-  const pb = useRef({ t: 0, playing: false, idx: -1, week: -1 });
+  const pb = useRef({ t: 0, playing: false, idx: -1 });
 
   const [idx, setIdx] = useState(0);
-  const [week, setWeek] = useState(0);
   const [playing, setPlaying] = useState(false);
   const [started, setStarted] = useState(false);
   const [glError, setGlError] = useState(false);
 
   // 3D sahne: plan değişince yeniden kurulur
   useEffect(() => {
-    pb.current = { t: 0, playing: false, idx: -1, week: -1 };
+    pb.current = { t: 0, playing: false, idx: -1 };
     setIdx(0); setPlaying(false); setStarted(false);
     const scene = createJawScene({
       canvas: canvasRef.current,
@@ -41,12 +40,6 @@ export default function PlanView({ patient, plan, patientMode, onEdit, onNew, re
         }
         const i = eventIndexAt(TL, s.t), e = TL[i];
         if (i !== s.idx) { s.idx = i; setIdx(i); }
-        if (e.ch === "heal" || e.ch === "gheal") {
-          // iyileşme: 0–12. hafta, kemikleşme: 1–6. ay
-          const n = e.ch === "heal" ? 13 : 6;
-          const wk = Math.min(n - 1, Math.floor(((s.t - e.start) / e.dur) * n));
-          if (wk !== s.week) { s.week = wk; setWeek(wk); }
-        }
         if (fillRef.current) fillRef.current.style.width = (s.t / TOTAL) * 100 + "%";
         if (timeRef.current) timeRef.current.textContent = `${fmtTime(s.t)} / ${fmtTime(TOTAL)}`;
         if (trackRef.current) trackRef.current.setAttribute("aria-valuetext", fmtTime(s.t));
@@ -55,10 +48,10 @@ export default function PlanView({ patient, plan, patientMode, onEdit, onNew, re
     });
     if (!scene) { setGlError(true); return undefined; }
     setGlError(false);
-    scene.build(plan, tl.TE);
+    scene.build(plan, tl.TE, fmr);
     sceneRef.current = scene;
     return () => { scene.dispose(); sceneRef.current = null; };
-  }, [tl, plan]);
+  }, [tl, plan, fmr]);
 
   const start = () => { const s = pb.current; s.playing = true; s.played = true; setPlaying(true); setStarted(true); };
   const play = () => { if (pb.current.t >= tlRef.current.TOTAL - 5) pb.current.t = 0; start(); };
@@ -84,19 +77,20 @@ export default function PlanView({ patient, plan, patientMode, onEdit, onNew, re
   });
 
   const e = tl.TL[idx] || tl.TL[0];
-  const info = CHINFO[e.ch];
+  const info = chInfo(e.ch, fmr);
   const ci = chapterIndexAt(tl.CH, e);
   let focusN = e.focus;
   for (let i = idx; i >= 0 && !focusN; i--) focusN = tl.TL[i].focus;
   if (!focusN) focusN = tl.keys[0];
-  const cal = e.ch === "heal" ? `Healing · week ${week}` : e.ch === "gheal" ? `Bone maturation · month ${week + 1}` : info.cal;
-  const extra = (e.ch === "ext" && hasI(plan, e.focus) && info.pImp) || (e.ch === "graft" && hasE(plan, e.focus) && info.pExt);
+  const cal = info.cal;
+  const ids = e.focus ? [e.focus] : e.set || [];
+  const extra = (e.ch === "ext" && ids.some((n) => hasI(plan, n)) && info.pImp) || (e.ch === "graft" && ids.some((n) => hasE(plan, n)) && info.pExt);
 
   return (
     <section style={{ display: "grid", gap: 18 }}>
       <div className="planhead">
         <div>
-          <div className="label">{patientMode ? "Your treatment plan" : "Personal treatment plan"}</div>
+          <div className="label">{(patientMode ? "Your treatment plan" : "Personal treatment plan") + (fmr ? ` · ${fmrLabel(fmr)}` : "")}</div>
           <h1>{patient.name}</h1>
           <div className="meta">{[patient.date && fmtDate(patient.date), patient.doc, `${tl.keys.length} ${tl.keys.length === 1 ? "tooth" : "teeth"}`].filter(Boolean).join(" · ")}</div>
         </div>
@@ -129,8 +123,8 @@ export default function PlanView({ patient, plan, patientMode, onEdit, onNew, re
             {glError && <p className="glerr">The 3D view could not start on this device. Please try again in an up-to-date browser.</p>}
           </div>
           <div className="caption swap" key={idx} aria-live="polite">
-            <span className="num2">{`STEP ${ci + 1} / ${tl.CH.length} · ${info.d}`}</span>
-            <h3>{info.t + (e.focus ? ` · tooth ${e.focus}` : "")}</h3>
+            <span className="num2">{`STEP ${ci + 1} / ${tl.CH.length}`}</span>
+            <h3>{info.t + (e.focus ? ` · tooth ${e.focus}` : e.arch ? ` · ${e.arch} jaw` : "")}</h3>
             <p>{info.p + (extra ? " " + extra : "")}</p>
           </div>
           <div className="controls">
@@ -167,21 +161,20 @@ export default function PlanView({ patient, plan, patientMode, onEdit, onNew, re
                 <li key={c.start} className={i === ci ? "active" : i < ci ? "done" : ""}>
                   <button type="button" onClick={() => seek(c.start)}>
                     <span className="n">{i + 1}</span>
-                    <span><span className="t">{CHINFO[c.ch].t}</span><span className="d">{CHINFO[c.ch].d}</span></span>
+                    <span className="t">{chInfo(c.ch, fmr).t}</span>
                   </button>
                 </li>
               ))}
             </ol>
           </div>
           <div className="summary">
-            {tl.exts.length > 0 && <div><span className="label">Extraction</span><b>{tl.exts.length}</b></div>}
-            {tl.grfs.length > 0 && <div><span className="label">Graft</span><b>{tl.grfs.length}</b></div>}
-            <div><span className="label">Implant</span><b>{tl.imps.length}</b></div>
-            <div><span className="label">Crown</span><b>{tl.crws.length}</b></div>
-            <div><span className="label">Duration</span><b>{tl.grfs.length && tl.imps.length ? "7–12 mo" : tl.grfs.length ? "4–6 mo" : tl.imps.length ? "3–6 mo" : tl.crws.length ? "1–2 wks" : "1 visit"}</b></div>
+            {[
+              ["Extraction", tl.exts], ["Graft", tl.grfs], ["Sinus lift", tl.sins], ["Root canal", tl.rcts], ["Filling", tl.fils],
+              ["Implant", tl.imps], ["Crown", tl.crws], ["Veneer", tl.vens],
+            ].filter(([, list]) => list.length).map(([label, list]) => <div key={label}><span className="label">{label}</span><b>{list.length}</b></div>)}
+            {fmr && <div><span className="label">Bridge</span><b>{tl.bridges}</b></div>}
           </div>
-          <p className="note">Durations are averages. Your dentist will set your personal schedule based on your bone and general health.</p>
-          {!patientMode && <SharePanel patient={patient} plan={plan} recordId={recordId} onSaved={onSaved} />}
+          {!patientMode && <SharePanel patient={patient} plan={plan} fmr={fmr} recordId={recordId} onSaved={onSaved} />}
           {patientMode && CLINIC.phone && <p className="note">{`Questions? ${CLINIC.name} · ${CLINIC.phone}`}</p>}
         </div>
       </div>
