@@ -1,13 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createJawScene } from "../three/JawScene.js";
-import { buildTimeline, chInfo, eventIndexAt, chapterIndexAt, fmtTime } from "../data/timeline.js";
-import { fmtDate, hasE, hasI, fmrLabel } from "../data/teeth.js";
+import { buildTimeline, chInfo, captionOf, eventIndexAt, chapterIndexAt, fmtTime } from "../data/timeline.js";
+import { fmtDate, fmrLabel } from "../data/teeth.js";
 import SharePanel from "./SharePanel.jsx";
 import { CLINIC } from "../config.js";
 const PlayIcon = () => <path d="M8 5v14l11-7z" />;
 const PauseIcon = () => <path d="M7 5h4v14H7zM13 5h4v14h-4z" />;
+const SPEEDS = [1, 1.5, 2, 3];
 
-export default function PlanView({ patient, plan, fmr = null, patientMode, onEdit, onNew, recordId, onSaved }) {
+export default function PlanView({ patient, plan, fmr = null, patientMode, onEdit, onNew, record, onSaved }) {
   const tl = useMemo(() => buildTimeline(plan, { fmr }), [plan, fmr]);
   const tlRef = useRef(tl);
   tlRef.current = tl;
@@ -15,16 +16,20 @@ export default function PlanView({ patient, plan, fmr = null, patientMode, onEdi
   const canvasRef = useRef(null), stageRef = useRef(null), labelRef = useRef(null), leaderRef = useRef(null), xrayRef = useRef(null);
   const fillRef = useRef(null), timeRef = useRef(null), trackRef = useRef(null);
   const sceneRef = useRef(null);
-  const pb = useRef({ t: 0, playing: false, idx: -1 });
+  const pb = useRef({ t: 0, playing: false, idx: -1, speed: 1 });
 
   const [idx, setIdx] = useState(0);
   const [playing, setPlaying] = useState(false);
+  const [speed, setSpeed] = useState(1);
+  const [exporting, setExporting] = useState(null); // video hazırlanırken 0–1 arası ilerleme
+  const [videoErr, setVideoErr] = useState("");
+  const abortRef = useRef(null);
   const [started, setStarted] = useState(false);
   const [glError, setGlError] = useState(false);
 
   // 3D sahne: plan değişince yeniden kurulur
   useEffect(() => {
-    pb.current = { t: 0, playing: false, idx: -1 };
+    pb.current = { t: 0, playing: false, idx: -1, speed: pb.current.speed };
     setIdx(0); setPlaying(false); setStarted(false);
     const scene = createJawScene({
       canvas: canvasRef.current,
@@ -35,27 +40,56 @@ export default function PlanView({ patient, plan, fmr = null, patientMode, onEdi
       driver: (dt) => {
         const { TL, TOTAL } = tlRef.current, s = pb.current;
         if (s.playing) {
-          s.t += dt;
+          s.t += dt * s.speed;
           if (s.t >= TOTAL) { s.t = TOTAL - 1; s.playing = false; setPlaying(false); }
         }
         const i = eventIndexAt(TL, s.t), e = TL[i];
         if (i !== s.idx) { s.idx = i; setIdx(i); }
-        if (fillRef.current) fillRef.current.style.width = (s.t / TOTAL) * 100 + "%";
-        if (timeRef.current) timeRef.current.textContent = `${fmtTime(s.t)} / ${fmtTime(TOTAL)}`;
-        if (trackRef.current) trackRef.current.setAttribute("aria-valuetext", fmtTime(s.t));
-        return { t: s.t, e, idle: !s.played, playing: s.playing };
+        // yalnızca zaman değişince DOM'a yazılır
+        if (s.t !== s.shown) {
+          s.shown = s.t;
+          if (fillRef.current) fillRef.current.style.width = (s.t / TOTAL) * 100 + "%";
+          const label = fmtTime(s.t);
+          if (label !== s.label) {
+            s.label = label;
+            if (timeRef.current) timeRef.current.textContent = `${label} / ${fmtTime(TOTAL)}`;
+            if (trackRef.current) trackRef.current.setAttribute("aria-valuetext", label);
+          }
+        }
+        return { t: s.t, e, idle: !s.played, playing: s.playing, speed: s.speed };
       },
     });
     if (!scene) { setGlError(true); return undefined; }
     setGlError(false);
     scene.build(plan, tl.TE, fmr);
     sceneRef.current = scene;
-    return () => { scene.dispose(); sceneRef.current = null; };
+    return () => { abortRef.current?.abort(); scene.dispose(); sceneRef.current = null; };
   }, [tl, plan, fmr]);
 
   const start = () => { const s = pb.current; s.playing = true; s.played = true; setPlaying(true); setStarted(true); };
-  const play = () => { if (pb.current.t >= tlRef.current.TOTAL - 5) pb.current.t = 0; start(); };
+  const play = () => { if (pb.current.t >= tlRef.current.TOTAL - 5) pb.current.t = 0; sceneRef.current?.autoCamera(); start(); };
   const pause = () => { pb.current.playing = false; setPlaying(false); };
+  const setRate = (x) => { pb.current.speed = x; setSpeed(x); };
+
+  // seçili hızda MP4 üretir ve indirir; video modülü (kodlayıcı) yalnızca gerekince yüklenir
+  async function downloadVideo() {
+    pause(); setVideoErr(""); setExporting(0);
+    const ac = new AbortController();
+    abortRef.current = ac;
+    try {
+      const { exportVideo } = await import("../lib/exportVideo.js");
+      const blob = await exportVideo({ scene: sceneRef.current, tl, plan, fmr, speed, signal: ac.signal, onProgress: setExporting });
+      const url = URL.createObjectURL(blob), a = document.createElement("a");
+      a.href = url; a.download = `treatment-plan-${patient.name.trim().replace(/\s+/g, "-") || "patient"}.mp4`;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+    } catch (err) {
+      if (!ac.signal.aborted) setVideoErr(err.message || "The video could not be created.");
+    } finally {
+      abortRef.current = null;
+      setExporting(null);
+    }
+  }
   // sona yakın bir yere atlamak oynatmayı başa sarmamalı, bu yüzden play() değil start()
   const seek = (t) => { pb.current.t = Math.max(0, Math.min(tl.TOTAL - 1, t)); if (!pb.current.playing) start(); };
   const seekAt = (clientX) => { const r = trackRef.current.getBoundingClientRect(); seek(((clientX - r.left) / r.width) * tl.TOTAL); };
@@ -83,12 +117,11 @@ export default function PlanView({ patient, plan, fmr = null, patientMode, onEdi
   for (let i = idx; i >= 0 && !focusN; i--) focusN = tl.TL[i].focus;
   if (!focusN) focusN = tl.keys[0];
   const cal = info.cal;
-  const ids = e.focus ? [e.focus] : e.set || [];
-  const extra = (e.ch === "ext" && ids.some((n) => hasI(plan, n)) && info.pImp) || (e.ch === "graft" && ids.some((n) => hasE(plan, n)) && info.pExt);
+  const cap = captionOf(e, plan, fmr);
 
   return (
-    <section style={{ display: "grid", gap: 18 }}>
-      <div className="planhead">
+    <section className={"planview" + (exporting !== null ? " busy" : "")}>
+      {!patientMode && <div className="planhead">
         <div>
           <div className="label">{(patientMode ? "Your treatment plan" : "Personal treatment plan") + (fmr ? ` · ${fmrLabel(fmr)}` : "")}</div>
           <h1>{patient.name}</h1>
@@ -100,7 +133,7 @@ export default function PlanView({ patient, plan, fmr = null, patientMode, onEdi
             <button className="btn ghost" type="button" onClick={() => { pause(); onNew(); }}>New patient</button>
           </div>
         )}
-      </div>
+      </div>}
 
       <div className="layout">
         <div className="card player">
@@ -120,12 +153,19 @@ export default function PlanView({ patient, plan, fmr = null, patientMode, onEdi
                 <svg viewBox="0 0 24 24" fill="currentColor"><path d="M7 4v16l13-8z" /></svg>
               </button>
             )}
+            {exporting !== null && (
+              <div className="exporting" role="status">
+                <b>Preparing video… {Math.round(exporting * 100)}%</b>
+                <div className="bar"><i style={{ width: exporting * 100 + "%" }} /></div>
+                <button className="btn ghost sm" type="button" onClick={() => abortRef.current?.abort()}>Cancel</button>
+              </div>
+            )}
             {glError && <p className="glerr">The 3D view could not start on this device. Please try again in an up-to-date browser.</p>}
           </div>
           <div className="caption swap" key={idx} aria-live="polite">
             <span className="num2">{`STEP ${ci + 1} / ${tl.CH.length}`}</span>
-            <h3>{info.t + (e.focus ? ` · tooth ${e.focus}` : e.arch ? ` · ${e.arch} jaw` : "")}</h3>
-            <p>{info.p + (extra ? " " + extra : "")}</p>
+            <h3>{cap.title}</h3>
+            <p>{cap.text}</p>
           </div>
           <div className="controls">
             <button className="pbtn" type="button" aria-label={playing ? "Pause" : "Play"} onClick={() => (playing ? pause() : play())}>
@@ -150,6 +190,13 @@ export default function PlanView({ patient, plan, fmr = null, patientMode, onEdi
               {tl.CH.slice(1).map((c) => <i key={c.start} className="tick" style={{ left: (c.start / tl.TOTAL) * 100 + "%" }} />)}
             </div>
             <span className="time" ref={timeRef} />
+            <div className="speed" role="group" aria-label="Playback speed">
+              {SPEEDS.map((x) => <button key={x} type="button" aria-pressed={speed === x} onClick={() => setRate(x)}>{x}×</button>)}
+            </div>
+            {!patientMode && !glError && typeof VideoEncoder !== "undefined" && (
+              <button className="btn ghost sm" type="button" disabled={exporting !== null} onClick={downloadVideo}>Download video</button>
+            )}
+            {videoErr && <p className="err videoerr" role="alert">{videoErr}</p>}
           </div>
         </div>
 
@@ -170,11 +217,11 @@ export default function PlanView({ patient, plan, fmr = null, patientMode, onEdi
           <div className="summary">
             {[
               ["Extraction", tl.exts], ["Graft", tl.grfs], ["Sinus lift", tl.sins], ["Root canal", tl.rcts], ["Filling", tl.fils],
-              ["Implant", tl.imps], ["Crown", tl.crws], ["Veneer", tl.vens],
+              ["Implant", tl.imps], ["Crown", tl.crws], ["Crown replacement", tl.rpls], ["Veneer", tl.vens],
             ].filter(([, list]) => list.length).map(([label, list]) => <div key={label}><span className="label">{label}</span><b>{list.length}</b></div>)}
             {fmr && <div><span className="label">Bridge</span><b>{tl.bridges}</b></div>}
           </div>
-          {!patientMode && <SharePanel patient={patient} plan={plan} fmr={fmr} recordId={recordId} onSaved={onSaved} />}
+          {!patientMode && <SharePanel patient={patient} plan={plan} fmr={fmr} record={record} onSaved={onSaved} />}
           {patientMode && CLINIC.phone && <p className="note">{`Questions? ${CLINIC.name} · ${CLINIC.phone}`}</p>}
         </div>
       </div>

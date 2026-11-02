@@ -1,13 +1,13 @@
 // Tedavi planı kayıtları.
-// GET: personel kendi kayıtlarını, admin hepsini görür.  POST: hasta linki oluşturulunca yeni kayıt.
-// PUT ?id=: aynı hastanın linki yeniden oluşturulunca kaydı günceller (sahibi ya da admin).
+// GET: personel kendi kayıtlarını, admin hepsini görür.  POST: plan ekranı açılınca yeni kayıt.
+// PUT ?id=: plan değişince aynı kaydı günceller (sahibi ya da admin).
 import { randomUUID } from "node:crypto";
 import { handle, readJson, send, fail, query } from "./_lib/http.js";
 import { requireUser } from "./_lib/auth.js";
 import { store } from "./_lib/store.js";
 
 // diş başına tedavi işaretleri (src/data/teeth.js FLAGS ile aynı)
-const TX = ["ext", "grf", "sin", "imp", "crw", "rct", "fil", "ven", "own"];
+const TX = ["ext", "grf", "sin", "imp", "crw", "rpl", "rct", "fil", "ven", "own"];
 const str = (v, max) => String(v ?? "").trim().slice(0, max);
 
 function clean(body) {

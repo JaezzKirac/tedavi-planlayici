@@ -2,7 +2,7 @@
 
 3D implant / crown / extraction / bone graft treatment plans for Clinic Group.
 Staff sign in, mark the teeth on a dental chart, play the 3D treatment animation and generate a
-patient link + QR code. Generating the link saves the patient to the dashboard of the staff member who made it.
+patient link + QR code. Opening the plan screen creates the link and saves the patient to the dashboard of the staff member who made it.
 
 ## Users
 | User | Role |
@@ -28,6 +28,9 @@ npm run build      # production build -> dist/
    **REST API** section and paste the URL and token into `UPSTASH_REDIS_REST_URL` / `UPSTASH_REDIS_REST_TOKEN`
    in `api/_lib/secrets.js`.
 3. Push again; Vercel redeploys automatically.
+
+## Video
+The **Download video** button on the staff plan screen renders the animation frame by frame into a 720p MP4 at the selected speed (Chrome, Edge or Safari; needs WebCodecs).
 
 ## Patient links
 - Links end in `#p=...`: the plan is encoded in the link and the part after `#` is never sent to the server.

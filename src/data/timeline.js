@@ -1,10 +1,11 @@
-import { sortedKeys, hasE, hasG, hasI, hasC, hasR, hasV, hasS, hasF, ARCH_ORDER, archOf } from "./teeth.js";
+import { sortedKeys, hasE, hasG, hasI, hasC, hasR, hasV, hasS, hasF, hasX, ARCH_ORDER, archOf } from "./teeth.js";
 
 // Aşama metinleri. Süre bilgisi bilerek yok: takvimi hastaya hekim / hasta danışmanı anlatır.
 // t: başlık, p: açıklama, cal: 3D görünümün köşesindeki kısa etiket
 export const CHINFO = {
   scan: { t: "Exam and 3D CT scan", p: "Your mouth is scanned and a dental CT measures the bone volume and the position of nerves and sinuses.", cal: "Exam" },
   fill: { t: "Dental filling", p: "The decay is cleaned out and the cavity is filled with tooth-coloured composite, which is shaped and hardened with a curing light.", cal: "Filling" },
+  crem: { t: "Removing the old crown", p: "The old crown is carefully cut and taken off, then the tooth underneath is cleaned and checked. A temporary crown protects it until the new one is ready.", cal: "Old crown" },
   rct: { t: "Root canal treatment", p: "The infected nerve inside the tooth is removed, the root canals are cleaned and shaped, then sealed so the tooth can be kept. You won't feel pain during the procedure.", cal: "Root canal" },
   ext: { t: "Tooth extraction", p: "Under local anaesthesia the tooth is gently loosened and removed while the surrounding bone is preserved. You won't feel pain during the procedure.", pImp: "Depending on the bone, the implant is placed in the same visit or once the socket has healed.", cal: "Extraction" },
   graft: { t: "Bone graft", p: "Where there isn't enough bone to hold the implant securely, it is rebuilt with bone graft material. The graft is covered with a protective membrane and stitched. Done under local anaesthesia.", pExt: "Because the extraction socket is filled in the same visit, bone loss is prevented as well.", cal: "Bone graft" },
@@ -40,6 +41,16 @@ export function chInfo(ch, fmr) {
   return info;
 }
 
+/** Olayın başlığı ve açıklaması (oynatıcı ve video aynı metni kullanır) */
+export function captionOf(e, plan, fmr) {
+  const info = chInfo(e.ch, fmr), ids = e.focus ? [e.focus] : e.set || [];
+  const extra = (e.ch === "ext" && ids.some((n) => hasI(plan, n)) && info.pImp) || (e.ch === "graft" && ids.some((n) => hasE(plan, n)) && info.pExt);
+  return {
+    title: info.t + (e.focus ? ` · tooth ${e.focus}` : e.arch ? ` · ${e.arch} jaw` : ""),
+    text: info.p + (extra ? " " + extra : ""),
+  };
+}
+
 /**
  * Plandan animasyon zaman çizelgesi üretir.
  * TL: olaylar (start/dur ms), CH: bölümler, TE: diş başına olay zamanları (köprüler için TE.U / TE.L)
@@ -50,15 +61,16 @@ export function buildTimeline(plan, { fmr = null } = {}) {
   const keys = sortedKeys(plan);
   const pick = (fn) => keys.filter((n) => fn(plan, n));
   const exts = pick(hasE), grfs = pick(hasG), sins = pick(hasS), imps = pick(hasI), crws = pick(hasC);
-  const rcts = pick(hasR), fils = pick(hasF), vens = pick(hasV);
+  const rcts = pick(hasR), fils = pick(hasF), vens = pick(hasV), rpls = pick(hasX);
   const preps = keys.filter((n) => hasC(plan, n) && !hasI(plan, n));
   const TL = [];
   const add = (ch, dur, o = {}) => TL.push({ ch, dur, ...o });
   // çene boyunca sırayla (sağdan sola), önce üst sonra alt çene
   const arches = [["U", "upper", ARCH_ORDER.filter((n) => archOf(n) === "U")], ["L", "lower", ARCH_ORDER.filter((n) => archOf(n) === "L")]]
     .filter(([a]) => !fmr || fmr.arches.includes(a));
-  const each = (ch, list, D, gap, single) => {
-    if (!fmr) return list.forEach((n) => add(ch, single, { focus: n, set: [n] }));
+  // group: çok diş varsa diş diş oynatmak yerine çene çene ve art arda işlenir
+  const each = (ch, list, D, gap, single, group = !!fmr) => {
+    if (!group) return list.forEach((n) => add(ch, single, { focus: n, set: [n] }));
     arches.forEach(([, arch, order]) => {
       const set = order.filter((n) => list.includes(n));
       if (set.length) add(ch, D + D * gap * (set.length - 1), { set, arch, stag: D * gap, td: D });
@@ -76,6 +88,7 @@ export function buildTimeline(plan, { fmr = null } = {}) {
     perArch("bridge", 5200);
   } else {
     each("fill", fils, 0, 0, 4600);
+    each("crem", rpls, 2200, 0.6, 4600, rpls.length > 6);
     each("rct", rcts, 0, 0, 6200);
     each("ext", exts, 0, 0, 5200);
     each("graft", grfs, 0, 0, 5600);
@@ -85,8 +98,9 @@ export function buildTimeline(plan, { fmr = null } = {}) {
     if (imps.length) add("heal", 5000, { set: imps });
     each("prep", preps, 0, 0, 5000);
     if (imps.length) add("abut", 4000, { set: imps });
-    if (crws.length || vens.length) add("lab", 3800, { scan: 1 });
-    each("fit", crws, 0, 0, 3400);
+    if (crws.length || vens.length || rpls.length) add("lab", 3800, { scan: 1 });
+    const fits = [...crws, ...rpls];
+    each("fit", fits, 2000, 0.5, 3400, fits.length > 6);
     each("ven", vens, 0, 0, 4800);
   }
   add("done", 6000, { done: 1 });
@@ -100,7 +114,7 @@ export function buildTimeline(plan, { fmr = null } = {}) {
   TL.forEach((e) => { if (e.bridge) (TE[e.bridge] ||= {})[e.ch] = { s: e.start, d: e.dur }; });
   const CH = [];
   TL.forEach((e) => { if (!CH.length || CH[CH.length - 1].ch !== e.ch) CH.push({ ch: e.ch, start: e.start }); });
-  return { TL, CH, TE, TOTAL, keys, exts, grfs, sins, imps, crws, rcts, fils, vens, bridges: fmr ? arches.length : 0 };
+  return { TL, CH, TE, TOTAL, keys, exts, grfs, sins, imps, crws, rcts, fils, vens, rpls, bridges: fmr ? arches.length : 0 };
 }
 
 /** Olayda o anda işlenen diş: tek dişlik olayda odak diş, art arda işlenen dişlerde sıradaki diş */

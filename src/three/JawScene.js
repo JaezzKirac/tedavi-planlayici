@@ -17,6 +17,13 @@ const BRAND = 0x8ea2ff; // Clinic Group lacivertinin sahnedeki parlak tonu
 const MOBILE = Math.min(window.screen?.width || 1e4, window.screen?.height || 1e4) < 700;
 const REDUCED = !!window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
 
+// Kalite kademeleri: kare hızı düşerse sırayla bir alta inilir. pr: çözünürlük üst sınırı, shadow: gölge.
+// Alt kademede başlayan sahnede yüzey malzemeleri de sadeleşir (bkz. phys). Seçim sekme kapanana kadar hatırlanır.
+const TIERS = [{ pr: 1.5, shadow: true }, { pr: 1, shadow: true }, { pr: 1, shadow: false }, { pr: 0.75, shadow: false }];
+const TIER_KEY = "jawTier", SLOW_MS = 34, WINDOW_MS = 1500, SETTLE_MS = 1500; // 34 ms ≈ 29 fps
+const readTier = () => { try { return Math.min(TIERS.length - 1, +sessionStorage.getItem(TIER_KEY) || 0); } catch { return 0; } };
+const saveTier = (x) => { try { sessionStorage.setItem(TIER_KEY, x); } catch { /* gizli pencere */ } };
+
 /**
  * @param {object} o
  * @param {HTMLCanvasElement} o.canvas
@@ -27,22 +34,24 @@ const REDUCED = !!window.matchMedia?.("(prefers-reduced-motion: reduce)").matche
  * @param {(dt:number)=>{t:number,e:object,idle:boolean,playing:boolean}} o.driver  her karede zaman ve aktif olayı verir
  */
 export function createJawScene({ canvas, container, labelEl, leaderEl, xrayEl, driver }) {
-  let renderer;
+  let renderer, tier = readTier();
   try {
-    renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
+    renderer = new THREE.WebGLRenderer({ canvas, antialias: tier < TIERS.length - 1, alpha: true });
   } catch (err) {
     return null;
   }
   renderer.setClearColor(0x000000, 0);
-  renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
+  const pixelRatio = () => Math.min(TIERS[tier].pr, window.devicePixelRatio || 1);
+  renderer.setPixelRatio(pixelRatio());
   renderer.outputEncoding = THREE.sRGBEncoding;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 0.9;
   renderer.shadowMap.enabled = true;
-  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  renderer.shadowMap.type = THREE.PCFShadowMap;
+  renderer.shadowMap.autoUpdate = false; // yalnızca dişler hareket ederken güncellenir
 
   const M = {}, GEO = {};
-  let PLAN = {}, TE = {}, FMR = null, gumOp = 1, raf = 0;
+  let PLAN = {}, TE = {}, FMR = null, gumOp = 1, raf = 0, cap = null, dead = false; // cap: video kaydı durumu
 
   const scene = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera(34, 1, 0.5, 800);
@@ -50,23 +59,22 @@ export function createJawScene({ canvas, container, labelEl, leaderEl, xrayEl, d
   controls.enableDamping = true; controls.dampingFactor = 0.08;
   controls.minDistance = 16; controls.maxDistance = 200;
   controls.target.set(OV_T.x, OV_T.y, OV_T.z);
-  controls.addEventListener("start", () => { G.tw = null; G.sway = null; });
+  controls.addEventListener("start", () => { G.tw = null; G.sway = null; G.auto = false; }); // elle döndürünce otomatik kamera bırakır
   controls.addEventListener("change", () => { G.dirty = true; });
 
   const pm = new THREE.PMREMGenerator(renderer);
   scene.environment = pm.fromScene(roomEnv(), 0.04).texture;
   scene.add(new THREE.HemisphereLight(0xa8dcff, 0x3a1a22, 0.35));
   const fill = new THREE.DirectionalLight(0xff9c8c, 0.35); fill.position.set(0, -40, 80); scene.add(fill);
-  const key = new THREE.DirectionalLight(0xfff0dc, 1.55); key.position.set(25, 90, 70); key.castShadow = true;
-  key.shadow.mapSize.set(MOBILE ? 1024 : 2048, MOBILE ? 1024 : 2048);
+  const key = new THREE.DirectionalLight(0xfff0dc, 1.55); key.position.set(25, 90, 70); key.castShadow = TIERS[tier].shadow;
+  key.shadow.mapSize.set(MOBILE ? 512 : 1024, MOBILE ? 512 : 1024);
   Object.assign(key.shadow.camera, { left: -60, right: 60, top: 60, bottom: -60, near: 10, far: 260 });
   key.shadow.bias = -0.0004; key.shadow.normalBias = 0.02;
   scene.add(key);
-  const rim = new THREE.DirectionalLight(0x7f9cff, 1.25); rim.position.set(-60, 40, -80); scene.add(rim);
-  const rim2 = new THREE.DirectionalLight(0x8fb8ff, 0.6); rim2.position.set(70, 20, -60); scene.add(rim2);
+  const rim = new THREE.DirectionalLight(0x7f9cff, 1.5); rim.position.set(-20, 40, -90); scene.add(rim);
 
   mkMats();
-  const G = { renderer, scene, camera, controls, root: null, T: {}, bur: mkBur(), scan: null, tw: null, last: performance.now() };
+  const G = { renderer, scene, camera, controls, auto: true, root: null, T: {}, bur: mkBur(), scan: null, tw: null, last: performance.now() };
   G.scan = new THREE.Mesh(new THREE.PlaneGeometry(80, 70), M.scan); G.scan.visible = false; scene.add(G.scan);
   scene.add(G.bur);
   G.file=new THREE.Group();
@@ -96,12 +104,32 @@ export function createJawScene({ canvas, container, labelEl, leaderEl, xrayEl, d
   G.ring = new THREE.Mesh(new THREE.TorusGeometry(1, 0.07, 8, 64), M.ring); G.ring.rotation.x = Math.PI / 2; G.ring.visible = false;
 
   function resize() {
+    if (cap) return;
     const w = container.clientWidth, h = container.clientHeight;
     if (!w || !h) return;
     renderer.setSize(w, h, false); camera.aspect = w / h; camera.updateProjectionMatrix();
     G.dirty = true;
   }
   const ro = new ResizeObserver(resize); ro.observe(container); resize();
+  // sayfa kaydırılıp 3D ekran dışına çıkınca çizim durur
+  let onScreen = true;
+  const io = new IntersectionObserver(([en]) => { onScreen = en.isIntersecting; G.dirty = true; });
+  io.observe(container);
+  // kare süresi ölçümü: yavaşsa bir alt kaliteye iner
+  let winStart = 0, winFrames = 0, settleUntil = performance.now() + SETTLE_MS;
+  function watchSpeed(now, ms) {
+    if (tier >= TIERS.length - 1 || now < settleUntil) return;
+    if (ms > 2000) { winFrames = 0; return; } // sekme değişimi gibi uzun aralıklar sayılmaz
+    if (!winFrames) winStart = now - ms;
+    winFrames++;
+    if (now - winStart < WINDOW_MS) return;
+    const slow = (now - winStart) / winFrames > SLOW_MS;
+    winFrames = 0;
+    if (!slow) return;
+    tier++; saveTier(tier); settleUntil = now + SETTLE_MS;
+    renderer.setPixelRatio(pixelRatio()); resize();
+    if (key.castShadow && !TIERS[tier].shadow) key.castShadow = false;
+  }
 
   function roomEnv(){
     const s=new THREE.Scene();
@@ -129,15 +157,20 @@ export function createJawScene({ canvas, container, labelEl, leaderEl, xrayEl, d
     x.fillStyle=g;x.fillRect(0,0,256,256);x.fillStyle="rgba(255,255,255,.9)";x.fillRect(20,126,216,3);
     return new THREE.CanvasTexture(cv);
   }
+  // zayıf bilgisayarda ağır fiziksel malzeme yerine sade olanı (parlak üst kat ve kabartma yok)
+  function phys(o){
+    if(tier<2)return new THREE.MeshPhysicalMaterial(o);
+    const {clearcoat,clearcoatRoughness,bumpMap,bumpScale,...r}=o;
+    return new THREE.MeshStandardMaterial(r);
+  }
   function mkMats(){
-    const enN=noiseTex(256,1,2,2), gumN=noiseTex(256,.6,40,3), tgN=noiseTex(256,.8,6,6);
-    M.enamel=new THREE.MeshPhysicalMaterial({color:0xffffff,vertexColors:true,roughness:.36,clearcoat:.75,clearcoatRoughness:.2,bumpMap:enN,bumpScale:.012,envMapIntensity:.55});
-    M.zirc=new THREE.MeshPhysicalMaterial({color:0xfff9ee,vertexColors:true,roughness:.2,clearcoat:1,clearcoatRoughness:.06,transparent:true,envMapIntensity:.8});
+    const gumN=noiseTex(128,.6,40,3);
+    M.enamel=phys({color:0xffffff,vertexColors:true,roughness:.36,clearcoat:.75,clearcoatRoughness:.2,envMapIntensity:.55});
+    M.zirc=phys({color:0xfff9ee,vertexColors:true,roughness:.2,clearcoat:1,clearcoatRoughness:.06,transparent:true,envMapIntensity:.8});
     M.metal=new THREE.MeshStandardMaterial({color:0xc3ccd6,metalness:1,roughness:.24,envMapIntensity:1.3});
     M.metalDark=new THREE.MeshStandardMaterial({color:0x4b555e,metalness:.8,roughness:.4});
-    M.gum=new THREE.MeshPhysicalMaterial({color:0xffffff,vertexColors:true,side:THREE.DoubleSide,roughness:.36,clearcoat:.9,clearcoatRoughness:.18,bumpMap:gumN,bumpScale:.05,transparent:true,envMapIntensity:.55});
-    M.tongue=new THREE.MeshPhysicalMaterial({color:0x9a3c4b,roughness:.55,clearcoat:.5,clearcoatRoughness:.3,bumpMap:tgN,bumpScale:.18,envMapIntensity:.4,transparent:true});
-    M.base=new THREE.MeshPhysicalMaterial({color:0x0e1436,roughness:.45,clearcoat:.5,clearcoatRoughness:.35,envMapIntensity:.3});
+    M.gum=phys({color:0xffffff,vertexColors:true,side:THREE.DoubleSide,roughness:.36,clearcoat:.9,clearcoatRoughness:.18,bumpMap:gumN,bumpScale:.05,transparent:true,envMapIntensity:.55});
+    M.base=phys({color:0x0e1436,roughness:.45,clearcoat:.5,clearcoatRoughness:.35,envMapIntensity:.3});
     M.bone=new THREE.MeshStandardMaterial({color:0xd8bf92,roughness:.8,transparent:true,envMapIntensity:.5});
     M.root=new THREE.MeshStandardMaterial({color:0xdcc49a,roughness:.55,envMapIntensity:.5,transparent:true,opacity:.75});
     M.decay=new THREE.MeshStandardMaterial({color:0x3e2614,roughness:.9,transparent:true});
@@ -145,19 +178,19 @@ export function createJawScene({ canvas, container, labelEl, leaderEl, xrayEl, d
     M.ring=new THREE.MeshBasicMaterial({color:BRAND,transparent:true,opacity:0,blending:THREE.AdditiveBlending,depthWrite:false});
     M.scan=new THREE.MeshBasicMaterial({color:BRAND,map:scanTex(),transparent:true,opacity:.55,side:THREE.DoubleSide,blending:THREE.AdditiveBlending,depthWrite:false});
     M.diamond=new THREE.MeshStandardMaterial({color:0xd4b25c,metalness:.9,roughness:.45});
-    M.hand=new THREE.MeshPhysicalMaterial({color:0xe9edf0,metalness:.2,roughness:.3,clearcoat:.8});
+    M.hand=phys({color:0xe9edf0,metalness:.2,roughness:.3,clearcoat:.8});
     M.graft=new THREE.MeshStandardMaterial({color:0xf3ecdc,roughness:.85,transparent:true,envMapIntensity:.5});
-    M.membrane=new THREE.MeshPhysicalMaterial({color:0xf5f7fa,roughness:.35,clearcoat:.6,transparent:true,opacity:0,side:THREE.DoubleSide,depthWrite:false});
+    M.membrane=phys({color:0xf5f7fa,roughness:.35,clearcoat:.6,transparent:true,opacity:0,side:THREE.DoubleSide,depthWrite:false});
     // All-on-X köprüsü: geçici (akrilik) ve kalıcı (zirkonyum), dişeti kısmı pembe
-    M.bTemp=new THREE.MeshPhysicalMaterial({color:0xf6efe0,vertexColors:true,roughness:.42,clearcoat:.25,transparent:true,envMapIntensity:.5});
-    M.bFinal=new THREE.MeshPhysicalMaterial({color:0xfffaf0,vertexColors:true,roughness:.18,clearcoat:1,clearcoatRoughness:.06,transparent:true,envMapIntensity:.85});
-    M.fTemp=new THREE.MeshPhysicalMaterial({color:0xd06c79,roughness:.45,clearcoat:.3,transparent:true,envMapIntensity:.5});
-    M.fFinal=new THREE.MeshPhysicalMaterial({color:0xe2808b,roughness:.22,clearcoat:1,clearcoatRoughness:.1,transparent:true,envMapIntensity:.7});
+    M.bTemp=phys({color:0xf6efe0,vertexColors:true,roughness:.42,clearcoat:.25,transparent:true,envMapIntensity:.5});
+    M.bFinal=phys({color:0xfffaf0,vertexColors:true,roughness:.18,clearcoat:1,clearcoatRoughness:.06,transparent:true,envMapIntensity:.85});
+    M.fTemp=phys({color:0xd06c79,roughness:.45,clearcoat:.3,transparent:true,envMapIntensity:.5});
+    M.fFinal=phys({color:0xe2808b,roughness:.22,clearcoat:1,clearcoatRoughness:.1,transparent:true,envMapIntensity:.7});
     // dolgu (kompozit), kanal dolgusu (gütaperka), sinüs boşluğu, kanal eğesi
-    M.fillMat=new THREE.MeshPhysicalMaterial({color:0xf4efe2,roughness:.3,clearcoat:.6,transparent:true,emissive:0x4a6cff,emissiveIntensity:0});
+    M.fillMat=phys({color:0xf4efe2,roughness:.3,clearcoat:.6,transparent:true,emissive:0x4a6cff,emissiveIntensity:0});
     M.canal=new THREE.MeshStandardMaterial({color:0xe2722e,roughness:.5,emissive:0x5a2208});
     M.tempFill=new THREE.MeshStandardMaterial({color:0xf2f2ee,roughness:.6});
-    M.sinus=new THREE.MeshPhysicalMaterial({color:0x9fd3ff,roughness:.2,transparent:true,opacity:0,side:THREE.DoubleSide,depthWrite:false,envMapIntensity:.4});
+    M.sinus=phys({color:0x9fd3ff,roughness:.2,transparent:true,opacity:0,side:THREE.DoubleSide,depthWrite:false,envMapIntensity:.4});
     M.endo=new THREE.MeshStandardMaterial({color:0xd9dde2,metalness:1,roughness:.25});
     M.endoHandle=new THREE.MeshStandardMaterial({color:0xf2c230,roughness:.5});
     M.STAIN=new THREE.Color(0xe9d6a8);
@@ -168,7 +201,7 @@ export function createJawScene({ canvas, container, labelEl, leaderEl, xrayEl, d
   /* ---- geometriler ---- */
   function crownGeo(k,w,d,h){
     const key=[k,w,d,h].join("_");if(GEO[key])return GEO[key];
-    const g=new THREE.SphereGeometry(1,64,40),p=g.attributes.position,v=new THREE.Vector3();
+    const g=new THREE.SphereGeometry(1,36,24),p=g.attributes.position,v=new THREE.Vector3();
     const molar=k>=6,pre=k===4||k===5,can=k===3,inc=k<=2,n=molar?3.2:pre?2.6:2.2;
     const col=new Float32Array(p.count*3),c=new THREE.Color();
     const BASE=new THREE.Color(0xe2d3b2),CERV=new THREE.Color(0xc29d63),EDGE=new THREE.Color(0xb9c3c6),FIS=new THREE.Color(0x7a5a38),CUSP=new THREE.Color(0xf1ead9);
@@ -205,10 +238,10 @@ export function createJawScene({ canvas, container, labelEl, leaderEl, xrayEl, d
     const grp=new THREE.Group();
     if(!GEO.imp){
       const pr=[[0,-11.2],[.9,-11],[1.45,-10.2],[1.72,-6],[1.88,-1],[2.05,-.6],[2.05,0],[1.1,.05],[0,.05]].map(a=>new THREE.Vector2(a[0],a[1]));
-      GEO.imp=new THREE.LatheGeometry(pr,48);
+      GEO.imp=new THREE.LatheGeometry(pr,20);
       const helix=new THREE.Curve();
       helix.getPoint=function(t,o){o=o||new THREE.Vector3();const a=t*Math.PI*2*9,y=-1.1-t*9.2,r=1.86-t*.36;return o.set(Math.cos(a)*r,y,Math.sin(a)*r);};
-      GEO.thread=new THREE.TubeGeometry(helix,600,.36,8,false);
+      GEO.thread=new THREE.TubeGeometry(helix,180,.36,5,false);
       GEO.hex=new THREE.CylinderGeometry(.8,.8,.6,6);
     }
     const core=new THREE.Mesh(GEO.imp,M.metal),th=new THREE.Mesh(GEO.thread,M.metal),hx=new THREE.Mesh(GEO.hex,M.metalDark);
@@ -218,8 +251,8 @@ export function createJawScene({ canvas, container, labelEl, leaderEl, xrayEl, d
   function abutMesh(){
     const g=new THREE.Group();
     const hex=new THREE.Mesh(new THREE.CylinderGeometry(1.9,1.9,1,6),M.metal);hex.position.y=.5;
-    const post=new THREE.Mesh(new THREE.CylinderGeometry(1.2,1.75,4.6,32),M.metal);post.position.y=3.3;
-    const top=new THREE.Mesh(new THREE.SphereGeometry(1.2,24,12,0,Math.PI*2,0,Math.PI/2),M.metal);top.position.y=5.6;
+    const post=new THREE.Mesh(new THREE.CylinderGeometry(1.2,1.75,4.6,16),M.metal);post.position.y=3.3;
+    const top=new THREE.Mesh(new THREE.SphereGeometry(1.2,16,6,0,Math.PI*2,0,Math.PI/2),M.metal);top.position.y=5.6;
     g.add(hex,post,top);g.traverse(m=>{if(m.isMesh)m.castShadow=true;});return g;
   }
   function mkBur(){
@@ -248,12 +281,12 @@ export function createJawScene({ canvas, container, labelEl, leaderEl, xrayEl, d
     geo.setAttribute("color",new THREE.BufferAttribute(col,3));return geo;
   }
   function tube(curve,r,mat,y,sy){
-    const g=new THREE.TubeGeometry(curve,260,r,32,false);
+    const g=new THREE.TubeGeometry(curve,90,r,12,false);
     const isGum=mat===M.gum,fn=Y=>Math.pow(clamp((Y+r)/(2*r)),1.6);
     if(isGum)gumColor(g,fn);
     const m=new THREE.Mesh(g,mat);
     m.position.y=y;m.scale.y=sy;m.receiveShadow=true;
-    [0,1].forEach(t=>{const sg=new THREE.SphereGeometry(r,32,20);if(isGum)gumColor(sg,fn);const c=new THREE.Mesh(sg,mat);c.position.copy(curve.getPoint(t));c.receiveShadow=true;m.add(c);});
+    [0,1].forEach(t=>{const sg=new THREE.SphereGeometry(r,12,8);if(isGum)gumColor(sg,fn);const c=new THREE.Mesh(sg,mat);c.position.copy(curve.getPoint(t));c.receiveShadow=true;m.add(c);});
     return m;
   }
 
@@ -280,19 +313,19 @@ export function createJawScene({ canvas, container, labelEl, leaderEl, xrayEl, d
         const th=-Math.atan2(tg.z,tg.x)+rnd(n)*.08;holder.rotation.y=th;
         const out=new THREE.Vector3(p.x,0,p.z+8).normalize();
         const rs=Math.sign(out.x*Math.sin(th)+out.z*Math.cos(th))||1;
-        const P=PLAN[n]||{},I=!!P.imp,C=!!P.crw,E=!!P.ext,GR=!!P.grf,RCT=!!P.rct,VEN=!!P.ven,SIN=!!P.sin,FIL=!!P.fil;
-        const treat=I||C||E||GR||RCT||VEN||SIN||FIL;
+        const P=PLAN[n]||{},I=!!P.imp,C=!!P.crw,E=!!P.ext,GR=!!P.grf,RCT=!!P.rct,VEN=!!P.ven,SIN=!!P.sin,FIL=!!P.fil,RPL=!!P.rpl;
+        const treat=I||C||E||GR||RCT||VEN||SIN||FIL||RPL;
         const geo=crownGeo(k,w,d,h);
         const tMat=treat?M.enamel.clone():M.enamel;
         const tilt=new THREE.Group();tilt.rotation.x=rs*INCL[k-1];tilt.rotation.z=rnd(n+7)*.06;holder.add(tilt);
         const tooth=new THREE.Mesh(geo,tMat);tooth.castShadow=true;tooth.receiveShadow=true;
-        const root=new THREE.Mesh(new THREE.CylinderGeometry(Math.min(w,d)*.36,Math.min(w,d)*.13,15,20),(E||RCT)?M.root.clone():M.root);root.position.y=-7.2;
+        const root=new THREE.Mesh(new THREE.CylinderGeometry(Math.min(w,d)*.36,Math.min(w,d)*.13,15,10),(E||RCT)?M.root.clone():M.root);root.position.y=-7.2;
         tilt.add(tooth,root);
         if(FA&&!PLAN[n]){tooth.visible=false;root.visible=false;}
         if(FA&&k<=BRIDGE_K&&!(PLAN[n]&&PLAN[n].own)){const bt=new THREE.Mesh(geo,M.bTemp);bt.scale.set(1.04,1,1.04);bt.castShadow=true;bt.visible=false;holder.add(bt);bridgeTeeth[side].push({k,bt,p:p.clone()});}
-        const o={n,holder,tilt,tz0:tilt.rotation.z,tooth,toothMat:tMat,root,w,d,h,rs,upper,treat,imp:I,crw:C,ext:E,grf:GR,rct:RCT,ven:VEN,sin:SIN,fil:FIL};
+        const o={n,holder,tilt,tz0:tilt.rotation.z,tooth,toothMat:tMat,root,w,d,h,rs,upper,treat,imp:I,crw:C,ext:E,grf:GR,rct:RCT,ven:VEN,sin:SIN,fil:FIL,rpl:RPL};
         if(E){tMat.transparent=true;o.rootMat=root.material;}
-        if(C){
+        if(C||RPL){
           o.crownMat=M.zirc.clone();
           o.crown=new THREE.Mesh(geo,o.crownMat);o.crown.scale.set(1.03,1.02,1.03);o.crown.castShadow=true;o.crown.visible=false;
           (I?holder:tilt).add(o.crown);
@@ -303,11 +336,11 @@ export function createJawScene({ canvas, container, labelEl, leaderEl, xrayEl, d
           const ig=new THREE.Group();if(FA&&FMR.type===4&&k===5)ig.rotation.z=.55;holder.add(ig);
           o.implant=implantMesh();o.implant.visible=false;ig.add(o.implant);
           o.abut=abutMesh();o.abut.visible=false;holder.add(o.abut);
-          o.glowMat=M.glow.clone();o.glow=new THREE.Mesh(new THREE.SphereGeometry(1,24,16),o.glowMat);o.glow.scale.set(3.6,7.6,3.6);o.glow.position.y=-8.6;o.glow.visible=false;holder.add(o.glow);
+          o.glowMat=M.glow.clone();o.glow=new THREE.Mesh(new THREE.SphereGeometry(1,12,8),o.glowMat);o.glow.scale.set(3.6,7.6,3.6);o.glow.position.y=-8.6;o.glow.visible=false;holder.add(o.glow);
         }
         if(E||(!I&&C)||FIL){
           o.decayMat=M.decay.clone();
-          o.decay=new THREE.Mesh(new THREE.SphereGeometry(1,20,12),o.decayMat);
+          o.decay=new THREE.Mesh(new THREE.SphereGeometry(1,10,6),o.decayMat);
           o.decay.scale.set(Math.min(w,d)*.24,Math.min(w,d)*.12,Math.min(w,d)*.2);o.decay.position.set(w*.12,h*.84,d*.05);
           tilt.add(o.decay);
         }
@@ -325,6 +358,12 @@ export function createJawScene({ canvas, container, labelEl, leaderEl, xrayEl, d
             gg.add(m);o.gran.push(m);
           }
           o.mem=new THREE.Mesh(new THREE.CylinderGeometry(R+1.4,R+1.4,.12,28),o.memMat);o.mem.position.y=.4;gg.add(o.mem);
+        }
+        if(RPL){
+          // eski kron: daha mat ve sarımsı; altındaki diş zaten kron için küçültülmüş
+          o.oldMat=M.zirc.clone();o.oldMat.color.set(0xe6d4ac);o.oldMat.roughness=.5;
+          o.old=new THREE.Mesh(geo,o.oldMat);o.old.scale.set(1.03,1.02,1.03);o.old.castShadow=true;tilt.add(o.old);
+          tooth.scale.set(.8,.74,.8);tMat.color.copy(M.DENTIN);
         }
         if(FIL){o.fillMat=M.fillMat.clone();o.fill=new THREE.Mesh(new THREE.SphereGeometry(1,20,12),o.fillMat);o.fill.position.copy(o.decay.position);o.fill.visible=false;tilt.add(o.fill);}
         if(RCT){
@@ -364,7 +403,7 @@ export function createJawScene({ canvas, container, labelEl, leaderEl, xrayEl, d
 
   // damak: iki yandaki dil tarafı dişetini birleştiren kubbe; önde enine kıvrımlar (rugae), ortada sırt (rafe) ve kesici papilla
   function buildPalate(H,list){
-    const last=list[list.length-1],S=Math.min(H.len,last.s0+last.w+1.5),RS=90,CS=56,pos=[],col=[],uv=[],idx=[];
+    const last=list[list.length-1],S=Math.min(H.len,last.s0+last.w+1.5),RS=70,CS=36,pos=[],col=[],uv=[],idx=[];
     const c=new THREE.Color(),DEEP=new THREE.Color(0x8a2a3c),CORAL=new THREE.Color(0xeba0a0);
     const RUG=[3.4,6.6,9.8,13];
     for(let i=0;i<=RS;i++){
@@ -404,7 +443,7 @@ export function createJawScene({ canvas, container, labelEl, leaderEl, xrayEl, d
     runs.forEach(r=>{
       const pts=r.map(o=>o.p.clone().setY(0));
       if(pts.length===1){const q=pts[0].clone();pts[0]=q.clone().add(new THREE.Vector3(-1.5,0,0));pts.push(q.add(new THREE.Vector3(1.5,0,0)));}
-      const fl=new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts),Math.max(8,r.length*14),2.6,20,false),b.ft);
+      const fl=new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts),Math.max(8,r.length*7),2.6,10,false),b.ft);
       fl.castShadow=true;fl.visible=false;b.flanges.push(fl);grp.add(fl);
     });
     G.bridges[a]=b;return grp;
@@ -412,7 +451,7 @@ export function createJawScene({ canvas, container, labelEl, leaderEl, xrayEl, d
   function buildGum(H,lists){
     const info=sd=>{const t=lists[sd],last=t[t.length-1],Lt=last.s0+last.w;return {t,last,Lt,Lend:Lt+3.4,bounds:[0,...t.map(x=>x.s0+x.w)]};};
     const A={"-1":info(-1),"1":info(1)};
-    const S0=-A["-1"].Lend,S1=A["1"].Lend,RS=Math.ceil((S1-S0)/.28),PS=40,pos=[],col=[],idx=[],uv=[];
+    const S0=-A["-1"].Lend,S1=A["1"].Lend,RS=Math.ceil((S1-S0)/.5),PS=22,pos=[],col=[],idx=[],uv=[];
     const c=new THREE.Color(),DEEP=new THREE.Color(0x952c40),CORAL=new THREE.Color(0xec9496);
     const JUGA=[.35,.3,1.1,.55,.5,.6,.5,.4];
     for(let i=0;i<=RS;i++){
@@ -501,6 +540,13 @@ export function createJawScene({ canvas, container, labelEl, leaderEl, xrayEl, d
       b.flanges.forEach(fl=>{fl.visible=vis;fl.material=fm;fl.position.y=.2+y;});
     });
   }
+  // kron değişimi: eski kron kesilir, kalkıp kaybolur; yenisi "fit" aşamasında takılır
+  function updRpl(o,te,t){
+    const c=te.crem,f=te.fit,on=!!c&&t>=c.s,pp=on?clamp((t-c.s)/(c.d*.85)):0,lift=ease(clamp((pp-.45)/.45));
+    o.old.visible=pp<1;o.old.position.y=lerp(0,14,lift);o.oldMat.opacity=1-clamp((pp-.6)/.4);
+    o.tooth.visible=!(f&&clamp((t-f.s)/(f.d*.6))>=1);
+    return on&&pp<.45?{o,mode:"prep",p:pp/.45}:null;
+  }
   // dolgu: matkap çürüğü temizler, kompozit yerleşir, mavi ışıkla sertleşir
   function updFill(o,te,t){
     const f=te.fill;if(!f)return null;const on=t>=f.s,pp=on?clamp((t-f.s)/(f.d*.85)):0;
@@ -551,6 +597,7 @@ export function createJawScene({ canvas, container, labelEl, leaderEl, xrayEl, d
       if(o.rct&&updRct(o,te,t)) filing=true;
       if(o.fil){const k=updFill(o,te,t);if(k)tool=k;}
       if(o.ven){const k=updVen(o,te,t);if(k)tool=k;}
+      if(o.rpl){const k=updRpl(o,te,t);if(k)tool=k;}
       const f=te.fit,pf=f?clamp((t-f.s)/(f.d*.6)):0;
       if(o.crown){o.crown.visible=!!f&&t>=f.s;o.crown.position.y=lerp(14,0,ease(pf));o.crownMat.opacity=Math.min(1,pf*2.5);}
       if(o.imp){
@@ -594,10 +641,50 @@ export function createJawScene({ canvas, container, labelEl, leaderEl, xrayEl, d
   }
 
   function camGo(pos,tgt,dur=1200,intro=false){
-    G.sway=null;
+    G.sway=null;if(!intro)G.auto=false;
     G.tw={a:new THREE.Spherical().setFromVector3(G.camera.position.clone().sub(G.controls.target)),b:new THREE.Spherical().setFromVector3(pos.clone().sub(tgt)),ta:G.controls.target.clone(),tb:tgt.clone(),t0:performance.now(),dur,intro};
   }
-  function ovPos(){const f=Math.max(1,1.3/(G.camera.aspect||1));return V().set(OV_P.x,OV_T.y+(OV_P.y-OV_T.y)*f,OV_T.z+(OV_P.z-OV_T.z)*f);}
+  function ovPos(){const f=Math.max(1.25,1.3/(G.camera.aspect||1));return V().set(OV_P.x,OV_T.y+(OV_P.y-OV_T.y)*f,OV_T.z+(OV_P.z-OV_T.z)*f);}
+  // Otomatik kamera: oynarken her aşamada işlem gören dişe ya da çeneye yaklaşır, açısını değiştirir.
+  // Her olay için hedef bir kadraj hesaplanır; kamera oraya yumuşakça süzülür.
+  const shotOf=(pos,tgt)=>({off:new THREE.Spherical().setFromVector3(pos.clone().sub(tgt)),tgt});
+  const camFit=()=>Math.max(1,1.3/(G.camera.aspect||1));
+  function toothShot(o,dist,lift=0){
+    const fit=camFit(),w=toothWorld(o),up=V().set(0,1,0);
+    // diş dışarıdan ve biraz yandan görülür; aletler önünü kapatmaz
+    const out=V().set(w.x,0,w.z+8).normalize().applyAxisAngle(up,(w.x<0?-1:1)*.32);
+    const tgt=(o.imp?o.holder.localToWorld(V().set(0,o.h*.15,0)):w.clone()).add(V().set(0,lift,0));
+    return shotOf(w.clone().add(out.multiplyScalar(dist*fit)).add(V().set(0,(o.upper?-20:18)*fit,0)),tgt);
+  }
+  function archShot(a,yaw){
+    const fit=camFit(),d=92*fit,ts=Object.values(G.T).filter(o=>o.upper===(a==="U")&&o.n%10<=6),c=V();
+    ts.forEach(o=>c.add(toothWorld(o)));c.divideScalar(ts.length);
+    return shotOf(c.clone().add(V().set(Math.sin(yaw)*d,(a==="U"?-22:36)*fit,Math.cos(yaw)*d)),c);
+  }
+  function wideShot(yaw){
+    const tgt=V().set(OV_T.x,OV_T.y,OV_T.z);
+    return shotOf(ovPos().sub(tgt).multiplyScalar(.92).applyAxisAngle(V().set(0,1,0),yaw).add(tgt),tgt);
+  }
+  function shotFor(e,t){
+    const fn=activeTooth(e,t),key=e.start+"|"+(fn||"");
+    if(G.shotKey===key)return G.shot;
+    G.shotKey=key;
+    const arch=n=>n<30?"U":"L",o=fn&&G.T[fn];
+    if(e.stag&&o){const x=toothWorld(o).x;G.shot=archShot(arch(fn),clamp((x+28)/56)*1.1-.55);}
+    else if(e.bridge)G.shot=archShot(e.bridge,e.bridge==="U"?-.3:.3);
+    else if(o)G.shot=e.ch==="sinus"?toothShot(o,92,12):toothShot(o,76);
+    else if(e.set&&e.set.length===1)G.shot=toothShot(G.T[e.set[0]],90);
+    else if(e.set&&e.set.length&&e.set.every(n=>arch(n)===arch(e.set[0])))G.shot=archShot(arch(e.set[0]),.25);
+    else G.shot=wideShot(e.ch==="scan"?-.3:e.ch==="lab"?.3:e.ch==="done"?.22:0);
+    return G.shot;
+  }
+  function autoCam(e,t,dt){
+    const {off,tgt}=shotFor(e,t),k=1-Math.exp(-dt*.0024),sc=new THREE.Spherical().setFromVector3(camera.position.clone().sub(controls.target));
+    let dth=off.theta-sc.theta;dth=Math.atan2(Math.sin(dth),Math.cos(dth));
+    sc.theta+=dth*k;sc.phi=lerp(sc.phi,off.phi,k);sc.radius=lerp(sc.radius,off.radius,k);
+    controls.target.lerp(tgt,k);
+    camera.position.copy(controls.target).add(V().setFromSpherical(sc));
+  }
   function camOverview(){if(G)camGo(ovPos(),V().set(OV_T.x,OV_T.y,OV_T.z));}
   function camTooth(n){
     if(!G||!G.T[n])return;
@@ -609,9 +696,12 @@ export function createJawScene({ canvas, container, labelEl, leaderEl, xrayEl, d
 
   function frame(now) {
     raf = requestAnimationFrame(frame);
-    const dt = Math.min(64, now - G.last); G.last = now;
-    const { t, e, idle, playing } = driver(dt);
-    if (!e || !G.root) { controls.update(); renderer.render(scene, camera); return; }
+    const raw = now - G.last, dt = Math.min(64, raw); G.last = now;
+    const st = driver(dt);
+    if (!st.e || !G.root) { controls.update(); renderer.render(scene, camera); return; }
+    step(now, dt, raw, st);
+  }
+  function step(now, dt, raw, { t, e, idle, playing, speed = 1 }) {
     updTeeth(t);
     // röntgen görünüm: çekim, greft, cerrahi, iyileşme ve dayanak aşamalarında dişeti saydamlaşır
     const xr = ["ext", "graft", "sinus", "gheal", "rct", "surgery", "heal", "abut"].includes(e.ch);
@@ -619,7 +709,7 @@ export function createJawScene({ canvas, container, labelEl, leaderEl, xrayEl, d
     M.gum.opacity = gumOp; M.bone.opacity = lerp(0.32, 1, (gumOp - 0.2) / 0.8);
     M.gum.depthWrite = M.bone.depthWrite = gumOp > 0.97;
     M.bone.visible = M.root.visible = gumOp < 0.97;
-    if (xrayEl) xrayEl.hidden = gumOp > 0.9;
+    if (cap) cap.xray = gumOp <= 0.9; else if (xrayEl) xrayEl.hidden = gumOp > 0.9;
     // tarama ışığı
     G.scan.visible = !!e.scan && !idle;
     if (e.scan) { const ph = (t - e.start) / 1600; G.scan.position.set(0, 12, lerp(34, -48, 0.5 - 0.5 * Math.cos(ph * Math.PI))); }
@@ -638,14 +728,19 @@ export function createJawScene({ canvas, container, labelEl, leaderEl, xrayEl, d
       }
     } else if (G.sway) {
       if (!idle) G.sway = null;
-      else camera.position.copy(controls.target).add(G.sway.base.clone().applyAxisAngle(V().set(0, 1, 0), Math.sin((now - G.sway.t0) * 0.00045) * 0.3));
-    }
+      else {
+        // iki salınımdan sonra durur; boşta bekleyen sekme ekran kartını yormaz
+        const el = now - G.sway.t0;
+        camera.position.copy(controls.target).add(G.sway.base.clone().applyAxisAngle(V().set(0, 1, 0), Math.sin(el * 0.00045) * 0.3));
+        if (el > 27900) G.sway = null;
+      }
+    } else if (playing && G.auto) autoCam(e, t, dt * speed);
     // işlem gören dişin çevresinde nabız gibi atan halka
     const fn = activeTooth(e, t), fo = fn && G.T[fn];
     G.ring.visible = !!fo;
     if (fo) {
       if (G.ring.parent !== fo.holder) fo.holder.add(G.ring);
-      const R = Math.max(fo.w, fo.d) * 0.72, pulse = 0.5 + 0.5 * Math.sin(now * 0.005);
+      const R = Math.max(fo.w, fo.d) * 0.72, pulse = playing ? 0.5 + 0.5 * Math.sin(now * 0.005) : 0.5;
       G.ring.position.y = 0.6;
       G.ring.scale.set(R * (1 + 0.06 * pulse), R * (1 + 0.06 * pulse), 1);
       M.ring.opacity = 0.35 + 0.35 * pulse;
@@ -654,26 +749,34 @@ export function createJawScene({ canvas, container, labelEl, leaderEl, xrayEl, d
     // işlem gören dişin etiketi: animasyonu kapatmaması için ekranda dişten dışarı doğru kaydırılır, ince çizgiyle dişe bağlanır
     if (labelEl) {
       if (fo) {
-        const W = container.clientWidth, H = container.clientHeight, p = toothWorld(fo).project(camera);
+        const W = cap ? cap.w : container.clientWidth, H = cap ? cap.h : container.clientHeight, p = toothWorld(fo).project(camera);
         const sx = (p.x + 1) / 2 * W, sy = (1 - p.y) / 2 * H;
         let dx = sx - W / 2, dy = sy - H / 2, L = Math.hypot(dx, dy);
         if (L < 40) { dx = 1; dy = 0; L = 1; }
         const D = W < 520 ? 80 : 120;
         const lx = Math.min(W - 56, Math.max(56, sx + dx / L * D)), ly = Math.min(H - 64, Math.max(48, sy + dy / L * D));
-        labelEl.hidden = false; labelEl.textContent = `Tooth ${fn}`;
-        labelEl.style.left = lx + "px"; labelEl.style.top = ly + "px";
-        if (leaderEl) {
+        if (cap) cap.label = { text: `Tooth ${fn}`, lx, ly, sx, sy };
+        else { labelEl.hidden = false; labelEl.textContent = `Tooth ${fn}`; }
+        if (!cap) labelEl.style.left = lx + "px"; labelEl.style.top = ly + "px";
+        if (leaderEl && !cap) {
           const vx = sx - lx, vy = sy - ly, len = Math.hypot(vx, vy) - 14;
           leaderEl.hidden = len < 16;
           leaderEl.style.left = lx + "px"; leaderEl.style.top = ly + "px";
           leaderEl.style.width = len + "px"; leaderEl.style.transform = `rotate(${Math.atan2(vy, vx)}rad)`;
         }
-      } else { labelEl.hidden = true; if (leaderEl) leaderEl.hidden = true; }
+      } else if (cap) cap.label = null;
+      else { labelEl.hidden = true; if (leaderEl) leaderEl.hidden = true; }
     }
-    // duraklatılmış ve hareketsiz sahne yeniden çizilmez (pil / ısı tasarrufu)
-    const settled = Math.abs(gumOp - (xr ? 0.2 : 1)) < 0.002;
-    // zaman atlandıysa (duraklatılmışken bölüme tıklama gibi) de çizilir
-    if (playing || G.wasPlaying || t !== G.lastT || G.tw || G.sway || G.dirty || G.ring.visible || !settled) renderer.render(scene, camera);
+    // duraklatılmış ve hareketsiz sahne yeniden çizilmez (pil / ısı tasarrufu); zaman atlandıysa da çizilir
+    const settled = Math.abs(gumOp - (xr ? 0.2 : 1)) < 0.002, moved = t !== G.lastT;
+    if (cap || onScreen && (playing || G.wasPlaying || moved || G.tw || G.sway || G.dirty || !settled)) {
+      // gölge kamera dönerken değişmez; dişler hareket ederken iki karede bir güncellenir
+      G.frame = (G.frame || 0) + 1;
+      renderer.shadowMap.needsUpdate = G.dirty || G.wasPlaying !== playing || (moved && G.frame % 2 === 0);
+      renderer.render(scene, camera);
+      if (G.drew && !cap) watchSpeed(now, raw);
+      G.drew = true;
+    } else G.drew = false;
     G.wasPlaying = playing; G.lastT = t; G.dirty = false;
   }
   raf = requestAnimationFrame(frame);
@@ -692,9 +795,39 @@ export function createJawScene({ canvas, container, labelEl, leaderEl, xrayEl, d
     },
     camOverview,
     camTooth,
+    /** Oynatma başlarken otomatik kamerayı açar */
+    autoCamera() { G.auto = true; G.shotKey = null; },
+    /** Video kaydını başlatır: canlı döngü durur, sahne verilen boyutta genel görünümden çizilir */
+    beginCapture(w, h) {
+      cancelAnimationFrame(raf);
+      cap = { w, h, now: 0, label: null, xray: false, pos: camera.position.clone(), tgt: controls.target.clone(), auto: G.auto };
+      G.tw = G.sway = null; G.auto = true; G.shotKey = null; gumOp = 1; G.dirty = true;
+      if (labelEl) labelEl.hidden = true;
+      if (leaderEl) leaderEl.hidden = true;
+      renderer.setPixelRatio(1); renderer.setSize(w, h, false);
+      camera.aspect = w / h; camera.updateProjectionMatrix();
+      controls.target.set(OV_T.x, OV_T.y, OV_T.z); camera.position.copy(ovPos());
+      return canvas;
+    },
+    /** Tek kare çizer; canvas aynı görevde okunmalıdır */
+    captureFrame(t, e, dt) {
+      cap.now += dt;
+      step(cap.now, dt, dt, { t, e, idle: false, playing: true });
+      return { label: cap.label, xray: cap.xray };
+    },
+    endCapture() {
+      if (!cap || dead) return;
+      const { pos, tgt, auto } = cap;
+      cap = null; G.auto = auto; G.shotKey = null;
+      controls.target.copy(tgt); camera.position.copy(pos);
+      renderer.setPixelRatio(pixelRatio()); resize();
+      G.last = performance.now(); G.dirty = true;
+      raf = requestAnimationFrame(frame);
+    },
     /** Tüm GPU kaynaklarını bırakır ve WebGL bağlamını kapatır (tarayıcının bağlam sınırına takılmamak için) */
     dispose() {
-      cancelAnimationFrame(raf); ro.disconnect(); controls.dispose();
+      dead = true;
+      cancelAnimationFrame(raf); ro.disconnect(); io.disconnect(); controls.dispose();
       const done = new Set();
       const free = (x) => { if (x && !done.has(x)) { done.add(x); x.dispose(); } };
       const freeMat = (m) => { free(m); ["map", "bumpMap"].forEach((k) => free(m[k])); };

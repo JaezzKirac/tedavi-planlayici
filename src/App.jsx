@@ -34,20 +34,23 @@ export default function App() {
 function PatientView({ fromUrl }) {
   const ok = fromUrl.patient && Object.keys(fromUrl.plan).length > 0;
   useEffect(() => { document.title = ok ? `${fromUrl.patient.name} · Treatment plan` : CLINIC.name; }, [ok, fromUrl]);
-  return (
-    <div className="wrap">
-      <div className="top"><Brand /></div>
-      {ok ? (
+  if (ok) {
+    return (
+      <div className="patientwrap">
         <Suspense fallback={loading}>
           <PlanView patient={fromUrl.patient} plan={fromUrl.plan} fmr={fromUrl.fmr} patientMode />
         </Suspense>
-      ) : (
-        <section className="card intake">
-          <div className="label">Treatment plan</div>
-          <h1>This link could not be opened</h1>
-          <p>The link may have been copied incompletely. Please ask your clinic to send it again.</p>
-        </section>
-      )}
+      </div>
+    );
+  }
+  return (
+    <div className="wrap">
+      <div className="top"><Brand /></div>
+      <section className="card intake">
+        <div className="label">Treatment plan</div>
+        <h1>This link could not be opened</h1>
+        <p>The link may have been copied incompletely. Please ask your clinic to send it again.</p>
+      </section>
     </div>
   );
 }
@@ -59,7 +62,7 @@ function StaffApp() {
   const [step, setStep] = useState(1);
   const [patient, setPatient] = useState({ name: "", date: today(), doc: "" });
   const [plan, setPlan] = useState({});
-  const [recordId, setRecordId] = useState(null);
+  const [record, setRecord] = useState(null); // kayıtlı plan: { id, code, initials, … }
   const [fmr, setFmr] = useState(null); // tam ağız restorasyonu: { type: 4|6|8, arches: "U"|"L"|"UL" }
 
   const checkSession = () => {
@@ -72,10 +75,10 @@ function StaffApp() {
 
   const newPlan = () => {
     setPatient({ name: "", date: today(), doc: user?.name || "" });
-    setPlan({}); setFmr(null); setRecordId(null); setStep(1); setView("create");
+    setPlan({}); setFmr(null); setRecord(null); setStep(1); setView("create");
   };
   const openRecord = (rec) => {
-    setPatient(rec.patient); setPlan(rec.plan); setFmr(rec.fmr || null); setRecordId(rec.id); setStep(3); setView("create");
+    setPatient(rec.patient); setPlan(rec.plan); setFmr(rec.fmr || null); setRecord(rec); setStep(3); setView("create");
   };
   const logout = async () => {
     try { await api.logout(); } catch { /* çerez yine de süresi dolunca geçersiz olur */ }
@@ -121,8 +124,8 @@ function StaffApp() {
               patient={patient}
               plan={plan}
               fmr={fmr}
-              recordId={recordId}
-              onSaved={setRecordId}
+              record={record}
+              onSaved={setRecord}
               onEdit={() => setStep(2)}
               onNew={newPlan}
             />

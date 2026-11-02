@@ -5,7 +5,7 @@ import { fmtDate } from "../data/teeth.js";
 import { STAFF } from "../config.js";
 
 const fmtWhen = (ms) => new Date(ms).toLocaleString("en-GB", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
-const KINDS = [["ext", "Extraction", "ext"], ["grf", "Graft", "grf"], ["sin", "Sinus lift", "sin"], ["imp", "Implant", "imp"], ["crw", "Crown", "crw"], ["rct", "Root canal", "rct"], ["fil", "Filling", "fil"], ["ven", "Veneer", "ven"]];
+const KINDS = [["ext", "Extraction", "ext"], ["grf", "Graft", "grf"], ["sin", "Sinus lift", "sin"], ["imp", "Implant", "imp"], ["crw", "Crown", "crw"], ["rpl", "Crown replacement", "rpl"], ["rct", "Root canal", "rct"], ["fil", "Filling", "fil"], ["ven", "Veneer", "ven"]];
 
 function counts(plan) {
   const c = Object.fromEntries(KINDS.map(([k]) => [k, 0]));
@@ -88,7 +88,7 @@ export default function Dashboard({ user, onOpen, onNew }) {
         {!error && !plans && <p className="empty">Loading…</p>}
         {plans && !rows.length && (
           <div className="dashempty">
-            <p className="empty">{plans.length ? "No patients match this filter." : "No patients yet. When you generate a patient link, the patient appears here."}</p>
+            <p className="empty">{plans.length ? "No patients match this filter." : "No patients yet. When you create a treatment plan, the patient appears here."}</p>
             {!plans.length && <button className="btn ghost" type="button" onClick={onNew}>Create your first plan</button>}
           </div>
         )}

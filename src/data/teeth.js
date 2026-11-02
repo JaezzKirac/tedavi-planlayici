@@ -26,15 +26,15 @@ TEETH.forEach((t) => { t.n = t.q * 10 + t.k; Object.assign(t, pos(t.q, t.k)); t.
 
 export const toothName = (n) => `${QN[Math.floor(n / 10)]} ${NAMES[(n % 10) - 1]}`;
 
-// plan: { [fdi]: { ext, grf, imp, crw, rct, ven, sin, fil, own: 0|1 } }
+// plan: { [fdi]: { ext, grf, imp, crw, rpl, rct, ven, sin, fil, own: 0|1 } }  rpl: eski kron sökülüp yenisi takılır
 // FLAGS: alan adı, linkteki harf, ekranda görünen ad (linkte bu sırayla yazılır)
 export const FLAGS = [
   ["ext", "e", "Extraction"], ["grf", "g", "Bone graft"], ["sin", "s", "Sinus lift"], ["imp", "i", "Implant"],
-  ["crw", "c", "Crown"], ["rct", "r", "Root canal"], ["fil", "f", "Filling"], ["ven", "v", "Veneer"], ["own", "o", "Own tooth"],
+  ["crw", "c", "Crown"], ["rpl", "x", "Crown replacement"], ["rct", "r", "Root canal"], ["fil", "f", "Filling"], ["ven", "v", "Veneer"], ["own", "o", "Own tooth"],
 ];
 const has = (k) => (plan, n) => !!(plan[n] && plan[n][k]);
 export const hasE = has("ext"), hasG = has("grf"), hasI = has("imp"), hasC = has("crw");
-export const hasR = has("rct"), hasV = has("ven"), hasS = has("sin"), hasF = has("fil"), hasO = has("own");
+export const hasR = has("rct"), hasV = has("ven"), hasS = has("sin"), hasF = has("fil"), hasO = has("own"), hasX = has("rpl");
 export const txLabel = (plan, n) => FLAGS.filter(([k]) => plan[n] && plan[n][k]).map(([, , label]) => label).join(" + ");
 export const emptyTx = () => Object.fromEntries(FLAGS.map(([k]) => [k, 0]));
 
@@ -52,6 +52,7 @@ export const naturalOk = (cur) => !cur.ext && !cur.imp;
 export function fixTx(cur, impOff) {
   const notes = [];
   if ((cur.ext || cur.imp) && (cur.rct || cur.fil || cur.ven)) { cur.rct = cur.fil = cur.ven = 0; notes.push("root canal / filling / veneer removed"); }
+  if (cur.rpl && (cur.ext || cur.imp || cur.crw)) { cur.rpl = 0; notes.push("crown replacement removed"); }
   if (cur.crw && (cur.fil || cur.ven)) { cur.fil = cur.ven = 0; notes.push("filling / veneer replaced by the crown"); }
   const needC = cur.ext && cur.crw, needG = cur.grf && !cur.ext, needS = cur.sin;
   if (!cur.imp && (needC || needG || needS)) {
