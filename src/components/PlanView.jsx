@@ -2,7 +2,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { createJawScene } from "../three/JawScene.js";
 import { buildTimeline, chInfo, captionOf, eventIndexAt, chapterIndexAt, fmtTime } from "../data/timeline.js";
 import { fmtDate, fmrLabel } from "../data/teeth.js";
-import SharePanel from "./SharePanel.jsx";
+import { encodePlan } from "../lib/share.js";
+import { api } from "../lib/api.js";
 import { CLINIC } from "../config.js";
 const PlayIcon = () => <path d="M8 5v14l11-7z" />;
 const PauseIcon = () => <path d="M7 5h4v14H7zM13 5h4v14h-4z" />;
@@ -24,6 +25,21 @@ export default function PlanView({ patient, plan, fmr = null, patientMode, onEdi
   const [exporting, setExporting] = useState(null); // video hazırlanırken 0–1 arası ilerleme
   const [videoErr, setVideoErr] = useState("");
   const abortRef = useRef(null);
+  const [saveState, setSaveState] = useState(null);
+
+  // plan ekranı açılınca hasta giriş yapan kişinin adına kaydedilir (aynı hasta güncellenir; değişiklik yoksa sunucuya gidilmez).
+  // Paneldeki "Copy link" bu kayıttaki kodu kullanır; linkte baş harfler yazar.
+  useEffect(() => {
+    if (patientMode) return;
+    const initials = record ? !!record.initials : true, code = encodePlan(patient, plan, initials, fmr);
+    if (record && record.code === code) { setSaveState({ state: "saved" }); return; }
+    setSaveState({ state: "saving" });
+    const body = { patient, plan, code, initials, fmr };
+    (record ? api.updatePlan(record.id, body) : api.createPlan(body)).then(
+      (d) => { onSaved?.(d.plan); setSaveState({ state: "saved" }); },
+      (e) => setSaveState({ state: "error", msg: e.message }),
+    );
+  }, []);
   const [started, setStarted] = useState(false);
   const [glError, setGlError] = useState(false);
 
@@ -126,6 +142,11 @@ export default function PlanView({ patient, plan, fmr = null, patientMode, onEdi
           <div className="label">{(patientMode ? "Your treatment plan" : "Personal treatment plan") + (fmr ? ` · ${fmrLabel(fmr)}` : "")}</div>
           <h1>{patient.name}</h1>
           <div className="meta">{[patient.date && fmtDate(patient.date), patient.doc, `${tl.keys.length} ${tl.keys.length === 1 ? "tooth" : "teeth"}`].filter(Boolean).join(" · ")}</div>
+          {saveState && (
+            <p className={"savestate " + saveState.state} role="status">
+              {saveState.state === "saving" ? "Saving to dashboard…" : saveState.state === "saved" ? "✓ Saved to your dashboard" : `Not saved: ${saveState.msg}`}
+            </p>
+          )}
         </div>
         {!patientMode && (
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
@@ -221,7 +242,6 @@ export default function PlanView({ patient, plan, fmr = null, patientMode, onEdi
             ].filter(([, list]) => list.length).map(([label, list]) => <div key={label}><span className="label">{label}</span><b>{list.length}</b></div>)}
             {fmr && <div><span className="label">Bridge</span><b>{tl.bridges}</b></div>}
           </div>
-          {!patientMode && <SharePanel patient={patient} plan={plan} fmr={fmr} record={record} onSaved={onSaved} />}
           {patientMode && CLINIC.phone && <p className="note">{`Questions? ${CLINIC.name} · ${CLINIC.phone}`}</p>}
         </div>
       </div>

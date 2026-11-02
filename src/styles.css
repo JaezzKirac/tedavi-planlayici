@@ -218,14 +218,8 @@ svg{display:block;width:100%;height:auto}
 .summary div{background:var(--surface);padding:10px;flex:1 1 108px}
 .summary b{font-family:var(--f-display);font-size:17px;white-space:nowrap;display:block;font-variant-numeric:tabular-nums}
 .note{font-size:13px;color:var(--muted);margin:0}
-.share{padding:18px;display:grid;gap:12px}
 .tog{display:flex;gap:8px;align-items:center;font-size:14px;cursor:pointer}
 .tog input{width:18px;height:18px;accent-color:var(--accent)}
-.linkrow{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px}
-.linkrow input{font:13px var(--f-mono);color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:10px;min-width:0}
-.qrwrap{display:grid;grid-template-columns:auto minmax(0,1fr);gap:12px;align-items:center}
-.qr{background:#fff;padding:8px;border-radius:10px;line-height:0}
-.qr canvas{width:132px;height:132px}
 .patient-only{display:none}
 body.patient .patient-only{display:block}
 body.patient .staff-only{display:none!important}

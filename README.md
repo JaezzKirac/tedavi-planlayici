@@ -1,8 +1,8 @@
 # Treatment Planner (React + Vite + Three.js)
 
 3D implant / crown / extraction / bone graft treatment plans for Clinic Group.
-Staff sign in, mark the teeth on a dental chart, play the 3D treatment animation and generate a
-patient link + QR code. Opening the plan screen creates the link and saves the patient to the dashboard of the staff member who made it.
+Staff sign in, mark the teeth on a dental chart and play the 3D treatment animation. Opening the plan screen saves the
+patient to the dashboard of the staff member who made it; the dashboard has a Copy link button for the patient link.
 
 ## Users
 | User | Role |
@@ -33,9 +33,9 @@ npm run build      # production build -> dist/
 The **Download video** button on the staff plan screen renders the animation frame by frame into a 720p MP4 at the selected speed (Chrome, Edge or Safari; needs WebCodecs).
 
 ## Patient links
-- Links end in `#p=...`: the plan is encoded in the link and the part after `#` is never sent to the server.
+- The dashboard's **Copy link** gives a link ending in `#p=...`: the plan is encoded in the link and the part after `#` is never sent to the server.
   Patients don't need an account; anyone with the link can see that plan.
-- "Show initials" (on by default) puts "J. S." in the link instead of the full name.
+- The link contains initials ("J. S."), not the full name.
   The dashboard always stores the full name.
 
 ## Structure
@@ -48,7 +48,7 @@ src/
   App.jsx                 patient view (#p=) or staff app (sign in, dashboard, create flow)
   config.js               clinic name / phone, staff list for the sign-in screen
   components/
-    Login.jsx Dashboard.jsx Intake.jsx ChartScreen.jsx ToothChart.jsx PlanView.jsx SharePanel.jsx
+    Login.jsx Dashboard.jsx Intake.jsx ChartScreen.jsx ToothChart.jsx PlanView.jsx
   three/JawScene.js       3D jaw, implant, crown, extraction, graft animations (Three.js r128)
   data/teeth.js           tooth geometry, names, sample patient
   data/timeline.js        treatment steps and animation timeline
