@@ -1,4 +1,4 @@
-import { TEETH, SZ, ARCH, CX, hasE, hasG, hasI, hasC, hasR, hasV, hasS, hasF, hasO, hasX, toothName, txLabel, inFmr } from "../data/teeth.js";
+import { TEETH, SZ, ARCH, CX, hasE, hasG, hasI, hasC, hasR, hasV, hasS, hasF, hasO, hasX, hasP, hasZ, toothName, txLabel, MOUTH_STATES } from "../data/teeth.js";
 
 // greft granülleri: dişin çevresinde küçük noktalar
 const GRAN = Array.from({ length: 9 }, (_, i) => { const a = (i / 9) * Math.PI * 2; return [Math.cos(a), Math.sin(a)]; });
@@ -17,18 +17,20 @@ function Cusps({ k }) {
   return <path className="cusp" d={`M${-w * 0.7} ${h * 0.15} Q0 ${-h * 0.15} ${w * 0.7} ${h * 0.15}`} />;
 }
 
-function visFor(plan, n, fmr) {
-  // tam ağız restorasyonunda işaretlenmemiş diş ağızda yok demektir
-  if (inFmr(n, fmr) && !plan[n]) return { absent: 1 };
-  const ext = hasE(plan, n) ? 1 : 0, grf = hasG(plan, n) ? 1 : 0;
-  if (hasI(plan, n) && hasC(plan, n)) return { ccrown: 1, imp: 1, ext, grf };
-  if (hasI(plan, n)) return { socket: 1, ghost: 1, imp: 1, ext, grf };
+// Önce dişin bugünkü hâli (eksik / kronlu / implantlı), üstüne planlanan işlemler çizilir
+function visFor(plan, n, mouth) {
+  const st = mouth[n] || "", ex = st === "c" || st === "i" ? { excrown: 1, eximp: st === "i" ? 1 : 0 } : null;
+  if (!plan[n]) return st === "m" ? { absent: 1 } : ex || { nat: 1 };
+  if (hasO(plan, n)) return { ...(ex || { nat: 1 }), own: 1 };
+  const ext = hasE(plan, n) ? 1 : 0, grf = hasG(plan, n) ? 1 : 0, ptyL = hasP(plan, n) ? 1 : 0, zygL = hasZ(plan, n) ? 1 : 0;
+  if (hasI(plan, n) && hasC(plan, n)) return { ccrown: 1, imp: 1, ext, grf, ptyL, zygL };
+  if (hasI(plan, n)) return { socket: 1, ghost: 1, imp: 1, ext, grf, ptyL, zygL };
   if (hasC(plan, n)) return { ccrown: 1, ext, grf };
   // yalnız çekim: boş yuva; greftliyse (soket koruma) yuva greftle dolu
   if (ext) return { socket: 1, ext, extX: grf ? 0 : 1, grf };
-  if (hasX(plan, n)) return { ccrown: 1, rpl: 1, rct: hasR(plan, n) ? 1 : 0 };
-  // doğal dişe yapılan işlemler: kanal, dolgu, veneer; tam ağızda kalacak kendi dişi
-  return { nat: 1, rct: hasR(plan, n) ? 1 : 0, fil: hasF(plan, n) ? 1 : 0, ven: hasV(plan, n) ? 1 : 0, own: hasO(plan, n) ? 1 : 0 };
+  if (hasX(plan, n)) return { ccrown: 1, rpl: 1, rct: hasR(plan, n) ? 1 : 0, eximp: st === "i" ? 1 : 0 };
+  // ağızda kalan dişe yapılan işlemler: kanal, dolgu, veneer
+  return { [st === "c" ? "excrown" : "nat"]: 1, rct: hasR(plan, n) ? 1 : 0, fil: hasF(plan, n) ? 1 : 0, ven: hasV(plan, n) ? 1 : 0 };
 }
 const sinOf = (plan, n) => (hasS(plan, n) ? 1 : 0);
 
@@ -61,15 +63,15 @@ function Mouth() {
   );
 }
 
-export default function ToothChart({ plan, fmr = null, onToggle }) {
+export default function ToothChart({ plan, mouth = {}, onToggle }) {
   return (
     <svg className="chart enter" viewBox="0 0 520 620" role="group" aria-label="Dental chart">
       <Mouth />
       {TEETH.map((t, i) => {
-        const [w, h] = SZ[t.k - 1], r = Math.max(w, h), vis = visFor(plan, t.n, fmr);
+        const [w, h] = SZ[t.k - 1], r = Math.max(w, h), vis = visFor(plan, t.n, mouth);
         vis.sin = sinOf(plan, t.n);
         const op = (k) => ({ opacity: vis[k] ? 1 : 0 });
-        const state = plan[t.n] ? txLabel(plan, t.n) : vis.absent ? "missing" : "unmarked";
+        const state = [MOUTH_STATES[mouth[t.n] || ""], plan[t.n] && txLabel(plan, t.n)].filter(Boolean).join(" · ");
         return (
           <g
             key={t.n}
@@ -84,6 +86,7 @@ export default function ToothChart({ plan, fmr = null, onToggle }) {
             <g className="pop" style={{ animationDelay: `${i * 35}ms` }}>
               <ellipse className="socket a" style={op("socket")} rx={w * 0.75} ry={h * 0.75} />
               <g className="a" style={op("nat")}><Shape k={t.k} cls="tshape" /><Cusps k={t.k} /></g>
+              <g className="a" style={op("excrown")}><Shape k={t.k} cls="exCrown" /><Cusps k={t.k} /></g>
               <g className="a" style={op("ccrown")}><Shape k={t.k} cls="chartcrown" /><Cusps k={t.k} /></g>
               <g className="a" style={op("ghost")}><Shape k={t.k} cls="ghostT" /></g>
               <g className="a" style={op("absent")}><Shape k={t.k} cls="absentT" /></g>
@@ -91,6 +94,9 @@ export default function ToothChart({ plan, fmr = null, onToggle }) {
                 <circle className="tiC" r="7" />
                 <path className="spiral" d="M0 -5 A5 5 0 1 1 -4.3 2.5 A3.5 3.5 0 1 1 2.5 -1.5 A1.6 1.6 0 1 1 0 0" />
               </g>
+              <circle className="exImp a" style={op("eximp")} r="4.2" />
+              <text className="impL a" style={op("ptyL")} y="0.5">P</text>
+              <text className="impL a" style={op("zygL")} y="0.5">Z</text>
               <g className="a" style={op("grf")}>
                 {GRAN.map(([cx, cy], j) => <circle key={j} className="gran" cx={cx * w * 0.62} cy={cy * h * 0.62} r={j % 2 ? 1.7 : 2.2} />)}
               </g>

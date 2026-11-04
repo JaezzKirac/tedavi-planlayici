@@ -1,17 +1,18 @@
 import { lazy, Suspense, useEffect, useState } from "react";
 import Intake from "./components/Intake.jsx";
 import ChartScreen from "./components/ChartScreen.jsx";
+import MouthScreen from "./components/MouthScreen.jsx";
 import Login from "./components/Login.jsx";
 import Dashboard from "./components/Dashboard.jsx";
 import { readPlanFromUrl } from "./lib/share.js";
 import { api } from "./lib/api.js";
-import { DEMO } from "./data/teeth.js";
+import { DEMO, legacyMouth, fitPlanToMouth } from "./data/teeth.js";
 import { CLINIC } from "./config.js";
 // 3D oynatıcı (Three.js) ayrı dosyada; ilk ekran daha hızlı açılır
 const PlanView = lazy(() => import("./components/PlanView.jsx"));
 
 const today = () => new Date().toISOString().slice(0, 10);
-const STEPS = ["Patient", "Dental chart", "Treatment plan"];
+const STEPS = ["Patient", "Current mouth", "Treatment", "3D plan"];
 const loading = <p className="loading">Loading treatment plan…</p>;
 
 function Brand() {
@@ -38,7 +39,7 @@ function PatientView({ fromUrl }) {
     return (
       <div className="patientwrap">
         <Suspense fallback={loading}>
-          <PlanView patient={fromUrl.patient} plan={fromUrl.plan} fmr={fromUrl.fmr} patientMode />
+          <PlanView patient={fromUrl.patient} plan={fromUrl.plan} fmr={fromUrl.fmr} mouth={fromUrl.mouth} patientMode />
         </Suspense>
       </div>
     );
@@ -62,6 +63,7 @@ function StaffApp() {
   const [step, setStep] = useState(1);
   const [patient, setPatient] = useState({ name: "", date: today(), doc: "" });
   const [plan, setPlan] = useState({});
+  const [mouth, setMouth] = useState({}); // ağzın bugünkü hâli
   const [record, setRecord] = useState(null); // kayıtlı plan: { id, code, initials, … }
   const [fmr, setFmr] = useState(null); // tam ağız restorasyonu: { type: 4|6|8, arches: "U"|"L"|"UL" }
 
@@ -75,10 +77,12 @@ function StaffApp() {
 
   const newPlan = () => {
     setPatient({ name: "", date: today(), doc: user?.name || "" });
-    setPlan({}); setFmr(null); setRecord(null); setStep(1); setView("create");
+    setPlan({}); setMouth({}); setFmr(null); setRecord(null); setStep(1); setView("create");
   };
   const openRecord = (rec) => {
-    setPatient(rec.patient); setPlan(rec.plan); setFmr(rec.fmr || null); setRecord(rec); setStep(3); setView("create");
+    setPatient(rec.patient); setPlan(rec.plan); setFmr(rec.fmr || null); setRecord(rec);
+    setMouth(rec.mouth || legacyMouth(rec.plan, rec.fmr)); // eski kayıtlarda ağız bilgisi yok
+    setStep(4); setView("create");
   };
   const logout = async () => {
     try { await api.logout(); } catch { /* çerez yine de süresi dolunca geçersiz olur */ }
@@ -114,19 +118,29 @@ function StaffApp() {
             patient={patient}
             onChange={setPatient}
             onSubmit={() => setStep(2)}
-            onDemo={() => { setPatient({ ...patient, ...DEMO.patient }); setPlan(DEMO.plan); setFmr(null); setStep(2); }}
+            onDemo={() => { setPatient({ ...patient, ...DEMO.patient }); setMouth(DEMO.mouth); setPlan(DEMO.plan); setFmr(null); setStep(2); }}
           />
         )}
-        {step === 2 && <ChartScreen patient={patient} plan={plan} setPlan={setPlan} fmr={fmr} setFmr={setFmr} onBack={() => setStep(1)} onNext={() => setStep(3)} />}
-        {step === 3 && (
+        {step === 2 && (
+          <MouthScreen
+            patient={patient}
+            mouth={mouth}
+            setMouth={setMouth}
+            onBack={() => setStep(1)}
+            onNext={() => { setPlan((p) => fitPlanToMouth(p, mouth, fmr)); setStep(3); }}
+          />
+        )}
+        {step === 3 && <ChartScreen patient={patient} mouth={mouth} plan={plan} setPlan={setPlan} fmr={fmr} setFmr={setFmr} onBack={() => setStep(2)} onNext={() => setStep(4)} />}
+        {step === 4 && (
           <Suspense fallback={loading}>
             <PlanView
               patient={patient}
               plan={plan}
               fmr={fmr}
+              mouth={mouth}
               record={record}
               onSaved={setRecord}
-              onEdit={() => setStep(2)}
+              onEdit={() => setStep(3)}
               onNew={newPlan}
             />
           </Suspense>

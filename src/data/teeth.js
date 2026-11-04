@@ -26,39 +26,53 @@ TEETH.forEach((t) => { t.n = t.q * 10 + t.k; Object.assign(t, pos(t.q, t.k)); t.
 
 export const toothName = (n) => `${QN[Math.floor(n / 10)]} ${NAMES[(n % 10) - 1]}`;
 
-// plan: { [fdi]: { ext, grf, imp, crw, rpl, rct, ven, sin, fil, own: 0|1 } }  rpl: eski kron sökülüp yenisi takılır
+// Ağzın bugünkü hâli: mouth = { [fdi]: "m" eksik | "c" kronlu | "i" implantlı }; listede olmayan diş doğal diştir
+export const MOUTH_STATES = { "": "Natural tooth", m: "Missing", c: "Existing crown", i: "Existing implant" };
+
+// plan: { [fdi]: { ext, grf, sin, imp, pty, zyg, crw, rpl, rct, fil, ven, own: 0|1 } }
+// rpl: mevcut kron sökülüp yenisi takılır; pty / zyg: implantın pterygoid ya da zygomatic türü (imp ile birlikte)
 // FLAGS: alan adı, linkteki harf, ekranda görünen ad (linkte bu sırayla yazılır)
 export const FLAGS = [
   ["ext", "e", "Extraction"], ["grf", "g", "Bone graft"], ["sin", "s", "Sinus lift"], ["imp", "i", "Implant"],
+  ["pty", "p", "Pterygoid implant"], ["zyg", "z", "Zygomatic implant"],
   ["crw", "c", "Crown"], ["rpl", "x", "Crown replacement"], ["rct", "r", "Root canal"], ["fil", "f", "Filling"], ["ven", "v", "Veneer"], ["own", "o", "Own tooth"],
 ];
 const has = (k) => (plan, n) => !!(plan[n] && plan[n][k]);
 export const hasE = has("ext"), hasG = has("grf"), hasI = has("imp"), hasC = has("crw");
 export const hasR = has("rct"), hasV = has("ven"), hasS = has("sin"), hasF = has("fil"), hasO = has("own"), hasX = has("rpl");
-export const txLabel = (plan, n) => FLAGS.filter(([k]) => plan[n] && plan[n][k]).map(([, , label]) => label).join(" + ");
+export const hasP = has("pty"), hasZ = has("zyg");
+// pterygoid / zygomatic implantta ayrıca "Implant" yazılmaz
+export const txLabel = (plan, n) => FLAGS.filter(([k]) => plan[n] && plan[n][k] && !(k === "imp" && (plan[n].pty || plan[n].zyg))).map(([, , label]) => label).join(" + ");
 export const emptyTx = () => Object.fromEntries(FLAGS.map(([k]) => [k, 0]));
 
 /** Sinüs lifting yalnızca üst çene arka bölgesinde (küçük ve büyük azılar) yapılır */
 export const sinusOk = (n) => n < 30 && n % 10 >= 4;
-/** Kanal tedavisi, dolgu ve veneer yalnızca ağızda kalan doğal dişe yapılır; veneer ön dişlere (kesiciler, köpek dişi, küçük azılar) */
-export const naturalOk = (cur) => !cur.ext && !cur.imp;
+/** Pterygoid implant üst çenenin en arkasından (2. büyük azı / 20 yaş bölgesi) pterygoid kemiğe açılı girer */
+export const ptyOk = (n) => [17, 18, 27, 28].includes(n);
+/** Zygomatic implant üst çenede köpek dişi – 1. büyük azı bölgesinden elmacık kemiğine uzanır */
+export const zygOk = (n) => n < 30 && n % 10 >= 3 && n % 10 <= 6;
 
 /**
- * Geçersiz kombinasyonları düzeltir:
- * çekilen dişe kron, çekim yapılmayan bölgeye greft ve sinüs lifting ancak implantla yapılır;
- * çekilen ya da implant konan dişte kanal / dolgu / veneer olmaz; kronlu dişe veneer ve dolgu yapılmaz.
- * impOff: implant az önce kaldırıldıysa geri eklenmez, ona bağlı işlemler kaldırılır. Kullanıcıya gösterilecek notu döndürür.
+ * Geçersiz kombinasyonları düzeltir. st: dişin bugünkü hâli ("" doğal, "c" kronlu, "m" eksik, "i" implantlı).
+ * - çekilen ya da implant konan dişte kanal / dolgu / veneer olmaz; kronlu dişe veneer ve dolgu yapılmaz
+ * - çekilen dişe kron, çekim yapılmayan bölgeye greft, sinüs lifting, pterygoid / zygomatic ancak implantla yapılır
+ * - ağızda duran dişe (ya da eski implantın yerine) implant konacaksa önce diş / eski implant çıkarılır
+ * impOff / extOff: implant ya da çekim az önce kaldırıldıysa geri eklenmez, ona bağlı işlemler kaldırılır.
+ * Kullanıcıya gösterilecek notu döndürür.
  */
-export function fixTx(cur, impOff) {
+export function fixTx(cur, impOff = false, st = "", extOff = false) {
   const notes = [];
+  const present = st !== "m"; // doğal, kronlu ya da implantlı: ağızda bir şey var
   if ((cur.ext || cur.imp) && (cur.rct || cur.fil || cur.ven)) { cur.rct = cur.fil = cur.ven = 0; notes.push("root canal / filling / veneer removed"); }
   if (cur.rpl && (cur.ext || cur.imp || cur.crw)) { cur.rpl = 0; notes.push("crown replacement removed"); }
   if (cur.crw && (cur.fil || cur.ven)) { cur.fil = cur.ven = 0; notes.push("filling / veneer replaced by the crown"); }
-  const needC = cur.ext && cur.crw, needG = cur.grf && !cur.ext, needS = cur.sin;
-  if (!cur.imp && (needC || needG || needS)) {
-    if (impOff) { if (needC) cur.crw = 0; if (needG) cur.grf = 0; if (needS) cur.sin = 0; notes.push("treatments that need an implant were removed too"); }
+  if (extOff && present && cur.imp) { cur.imp = 0; impOff = true; notes.push("implant removed"); }
+  const needC = cur.ext && cur.crw, needG = cur.grf && !cur.ext, needS = cur.sin, needP = cur.pty || cur.zyg;
+  if (!cur.imp && (needC || needG || needS || needP)) {
+    if (impOff) { if (needC) cur.crw = 0; if (needG) cur.grf = 0; cur.sin = cur.pty = cur.zyg = 0; notes.push("treatments that need an implant were removed too"); }
     else { cur.imp = 1; notes.push("implant added"); }
   }
+  if (present && cur.imp && !cur.ext) { cur.ext = 1; notes.push("extraction added"); }
   return notes.length ? ` (${notes.join("; ")})` : "";
 }
 export const sortedKeys = (plan) => Object.keys(plan).map(Number).sort((a, b) => a - b);
@@ -69,7 +83,9 @@ export const ARCH_ORDER = TEETH.map((t) => t.n);
 /*
  * Tam ağız restorasyonu: All-on-4 / All-on-6 / All-on-8.
  * Seçilen çenede ağızda kalan bütün dişler çekilir, çeneye 4/6/8 implant konur ve üzerine tek parça sabit köprü takılır.
- * fmr = { type: 4 | 6 | 8, arches: "U" | "L" | "UL" }
+ * fmr = { type: 4 | 6 | 8, arches: "U" | "L" | "UL", zyg, pty }
+ * zyg: üst çenede en arkadaki implantlar zygomatic olur (kemiği çok az olan üst çene için)
+ * pty: üst çenede 2. büyük azı bölgesine birer pterygoid implant eklenir; köprü o dişe kadar uzar
  * ALL_ON: her yanda implant konan diş pozisyonları (1 orta kesici … 6 birinci büyük azı).
  * All-on-4'te arka implantlar sinüs ve sinirden uzak durmak için açılı konur.
  */
@@ -79,30 +95,77 @@ export const ARCH_NAMES = { U: "upper jaw", L: "lower jaw", UL: "upper and lower
 export const archOf = (n) => (n < 30 ? "U" : "L");
 export const inFmr = (n, fmr) => !!fmr && fmr.arches.includes(archOf(n));
 export const isTilted = (n, fmr) => !!fmr && fmr.type === 4 && n % 10 === 5;
-export const fmrLabel = (fmr) => `All-on-${fmr.type} · ${ARCH_NAMES[fmr.arches]}`;
+export const fmrLabel = (fmr) => `All-on-${fmr.type}${fmr.zyg ? " zygomatic" : ""}${fmr.pty ? " + pterygoid" : ""} · ${ARCH_NAMES[fmr.arches]}`;
 
 /**
  * İşaretlenen dişlerden plan üretir. marks: Map(diş → "x" çekilecek | "o" hastanın kendi dişi, kalacak).
  * İşaretsiz diş ağızda yok demektir. Tipe göre implant pozisyonları eklenir; kendi dişi kalan yere implant konmaz.
  */
 export function fmrPlan(marks, fmr) {
-  const plan = {};
+  const plan = {}, post = Math.max(...ALL_ON[fmr.type]);
   ARCH_ORDER.forEach((n) => {
     if (!inFmr(n, fmr)) return;
-    const m = marks.get(n);
+    const m = marks.get(n), k = n % 10, upper = n < 30;
     if (m === "o") { plan[n] = { ...emptyTx(), own: 1 }; return; }
-    const ext = m === "x" ? 1 : 0, imp = ALL_ON[fmr.type].includes(n % 10) ? 1 : 0;
-    if (ext || imp) plan[n] = { ...emptyTx(), ext, imp };
+    const pty = fmr.pty && upper && k === 7 ? 1 : 0;
+    const imp = ALL_ON[fmr.type].includes(k) || pty ? 1 : 0, zyg = fmr.zyg && upper && k === post ? 1 : 0;
+    const ext = m === "x" ? 1 : 0;
+    if (ext || imp) plan[n] = { ...emptyTx(), ext, imp, pty, zyg };
   });
   return plan;
 }
-/** Plandan işaretleri geri okur */
-export const fmrMarks = (plan) => new Map(sortedKeys(plan).filter((n) => plan[n].ext || plan[n].own).map((n) => [n, plan[n].own ? "o" : "x"]));
+/** Tam ağız işaretleri: ağızda olan dişler önceki seçim korunarak, yoksa varsayılanla (implantlı diş kalır, diğerleri çekilir) */
+export function fmrMarksFor(mouth, fmr, plan = {}) {
+  const marks = new Map();
+  ARCH_ORDER.forEach((n) => {
+    if (!inFmr(n, fmr) || mouth[n] === "m") return;
+    const p = plan[n];
+    marks.set(n, p?.own ? "o" : p?.ext ? "x" : mouth[n] === "i" ? "o" : "x");
+  });
+  return marks;
+}
+/** Bridge, pterygoid implant varsa o dişe kadar uzar */
+export const bridgeK = (fmr, upper) => (fmr && upper && fmr.pty ? 7 : BRIDGE_K);
+
+/** Ağız bilgisi olmayan eski kayıtlar için planından tahmin eder (implant tek başına = eksik diş, kron değişimi = kronlu diş) */
+export function legacyMouth(plan, fmr) {
+  const mouth = {};
+  sortedKeys(plan).forEach((n) => {
+    const t = plan[n];
+    if (t.rpl) mouth[n] = "c";
+    else if ((t.imp || t.grf) && !t.ext) mouth[n] = "m";
+  });
+  if (fmr) ARCH_ORDER.forEach((n) => { if (inFmr(n, fmr) && !plan[n]) mouth[n] = "m"; });
+  return mouth;
+}
+
+/** Ağız değişince plandaki artık geçersiz işlemleri temizler */
+export function fitPlanToMouth(plan, mouth, fmr) {
+  if (fmr) return fmrPlan(fmrMarksFor(mouth, fmr, plan), fmr);
+  const out = {};
+  sortedKeys(plan).forEach((n) => {
+    const st = mouth[n] || "", c = { ...emptyTx(), ...plan[n] };
+    // eski implant çıkarılmıyorsa yalnızca kronu değiştirilebilir
+    if (st === "i" && !c.ext) { const r = c.rpl || c.crw; Object.assign(c, emptyTx()); c.rpl = r ? 1 : 0; }
+    else {
+      if (st === "m") { c.ext = c.rct = c.fil = c.ven = c.rpl = 0; if (!c.imp) c.crw = 0; }
+      if (st === "c") { c.fil = c.ven = 0; if (c.crw && !c.imp && !c.ext) { c.crw = 0; c.rpl = 1; } }
+      if (st === "") c.rpl = 0;
+      fixTx(c, false, st);
+    }
+    if (FLAGS.some(([k]) => c[k])) out[n] = c;
+  });
+  return out;
+}
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 export const fmtDate = (d) => { if (!d) return ""; const [y, m, g] = d.split("-"); return `${+g} ${MONTHS[+m - 1] || m} ${y}`; };
 
 export const DEMO = {
   patient: { name: "Jane Smith" },
-  plan: { 36: { ext: 1, grf: 1, imp: 1, crw: 1 }, 37: { imp: 1, crw: 1 }, 46: { imp: 0, crw: 1 }, 14: { imp: 1, crw: 1 }, 24: { grf: 1, imp: 1, crw: 0 }, 48: { ext: 1 } },
+  mouth: { 18: "m", 28: "m", 38: "m", 14: "m", 37: "m", 24: "m", 46: "c", 16: "i" },
+  plan: {
+    36: { ext: 1, grf: 1, imp: 1, crw: 1 }, 37: { imp: 1, crw: 1 }, 46: { rpl: 1 }, 14: { imp: 1, crw: 1 },
+    24: { grf: 1, imp: 1 }, 48: { ext: 1 }, 16: { rpl: 1 }, 11: { ven: 1 }, 21: { ven: 1 },
+  },
 };

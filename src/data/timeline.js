@@ -1,4 +1,4 @@
-import { sortedKeys, hasE, hasG, hasI, hasC, hasR, hasV, hasS, hasF, hasX, ARCH_ORDER, archOf } from "./teeth.js";
+import { sortedKeys, hasE, hasG, hasI, hasC, hasR, hasV, hasS, hasF, hasX, hasP, hasZ, ARCH_ORDER, archOf } from "./teeth.js";
 
 // Aşama metinleri. Süre bilgisi bilerek yok: takvimi hastaya hekim / hasta danışmanı anlatır.
 // t: başlık, p: açıklama, cal: 3D görünümün köşesindeki kısa etiket
@@ -7,11 +7,16 @@ export const CHINFO = {
   fill: { t: "Dental filling", p: "The decay is cleaned out and the cavity is filled with tooth-coloured composite, which is shaped and hardened with a curing light.", cal: "Filling" },
   crem: { t: "Removing the old crown", p: "The old crown is carefully cut and taken off, then the tooth underneath is cleaned and checked. A temporary crown protects it until the new one is ready.", cal: "Old crown" },
   rct: { t: "Root canal treatment", p: "The infected nerve inside the tooth is removed, the root canals are cleaned and shaped, then sealed so the tooth can be kept. You won't feel pain during the procedure.", cal: "Root canal" },
-  ext: { t: "Tooth extraction", p: "Under local anaesthesia the tooth is gently loosened and removed while the surrounding bone is preserved. You won't feel pain during the procedure.", pImp: "Depending on the bone, the implant is placed in the same visit or once the socket has healed.", cal: "Extraction" },
+  ext: { t: "Tooth extraction", p: "Under local anaesthesia the tooth is gently loosened and removed while the surrounding bone is preserved. You won't feel pain during the procedure.", pImp: "Depending on the bone, the implant is placed in the same visit or once the socket has healed.", cal: "Extraction",
+    tRem: "Removing the old implant", pRem: "The old implant is loosened with a special tool and taken out, and the site is cleaned so that it can heal or receive a new implant. Done under local anaesthesia." },
   graft: { t: "Bone graft", p: "Where there isn't enough bone to hold the implant securely, it is rebuilt with bone graft material. The graft is covered with a protective membrane and stitched. Done under local anaesthesia.", pExt: "Because the extraction socket is filled in the same visit, bone loss is prevented as well.", cal: "Bone graft" },
   sinus: { t: "Sinus lift", p: "In the upper back jaw the floor of the sinus is gently lifted and bone graft is placed beneath it, so there is enough bone height to hold the implant.", cal: "Sinus lift" },
   gheal: { t: "Graft maturation", p: "Over time the graft turns into your own bone. You carry on with daily life as normal; a temporary tooth can be used if needed.", cal: "Bone maturation" },
-  surgery: { t: "Implant placement", p: "Under local anaesthesia a small channel is prepared in the bone, then the titanium implant is screwed into place. You won't feel pain during the procedure.", cal: "Implants" },
+  surgery: {
+    t: "Implant placement",
+    pZyg: "A zygomatic implant is much longer than a regular implant and is anchored in the cheekbone, so fixed teeth are possible even when there is very little bone in the upper jaw, often without a bone graft.",
+    pPty: "A pterygoid implant is placed at an angle behind the last molar into the dense bone at the back of the upper jaw. It supports the back teeth firmly, usually without a sinus lift.",
+    p: "Under local anaesthesia a small channel is prepared in the bone, then the titanium implant is screwed into place. You won't feel pain during the procedure.", cal: "Implants" },
   heal: { t: "Healing (osseointegration)", p: "The implants fuse with the bone. You carry on with daily life as normal; a temporary tooth can be used if needed.", cal: "Healing" },
   prep: { t: "Preparing the tooth for a crown", p: "Decay is removed and a thin layer is taken from each surface of the tooth to shape it for the crown.", cal: "Preparation" },
   abut: { t: "Fitting the abutments", p: "An abutment or healing cap that will carry the crown is screwed onto each healed implant.", cal: "Abutments" },
@@ -42,9 +47,17 @@ export function chInfo(ch, fmr) {
 }
 
 /** Olayın başlığı ve açıklaması (oynatıcı ve video aynı metni kullanır) */
-export function captionOf(e, plan, fmr) {
-  const info = chInfo(e.ch, fmr), ids = e.focus ? [e.focus] : e.set || [];
-  const extra = (e.ch === "ext" && ids.some((n) => hasI(plan, n)) && info.pImp) || (e.ch === "graft" && ids.some((n) => hasE(plan, n)) && info.pExt);
+export function captionOf(e, plan, fmr, mouth = {}) {
+  let info = chInfo(e.ch, fmr);
+  const ids = e.focus ? [e.focus] : e.set || [];
+  // hastada zaten olan implantın çıkarılması
+  if (e.ch === "ext" && e.focus && mouth[e.focus] === "i") info = { ...info, t: info.tRem, p: info.pRem };
+  const extra = [
+    e.ch === "ext" && ids.some((n) => hasI(plan, n)) && info.pImp,
+    e.ch === "graft" && ids.some((n) => hasE(plan, n)) && info.pExt,
+    e.ch === "surgery" && ids.some((n) => hasZ(plan, n)) && info.pZyg,
+    e.ch === "surgery" && ids.some((n) => hasP(plan, n)) && info.pPty,
+  ].filter(Boolean).join(" ");
   return {
     title: info.t + (e.focus ? ` · tooth ${e.focus}` : e.arch ? ` · ${e.arch} jaw` : ""),
     text: info.p + (extra ? " " + extra : ""),
@@ -62,6 +75,7 @@ export function buildTimeline(plan, { fmr = null } = {}) {
   const pick = (fn) => keys.filter((n) => fn(plan, n));
   const exts = pick(hasE), grfs = pick(hasG), sins = pick(hasS), imps = pick(hasI), crws = pick(hasC);
   const rcts = pick(hasR), fils = pick(hasF), vens = pick(hasV), rpls = pick(hasX);
+  const ptys = pick(hasP), zygs = pick(hasZ), regImps = imps.filter((n) => !hasP(plan, n) && !hasZ(plan, n));
   const preps = keys.filter((n) => hasC(plan, n) && !hasI(plan, n));
   const TL = [];
   const add = (ch, dur, o = {}) => TL.push({ ch, dur, ...o });
@@ -114,7 +128,7 @@ export function buildTimeline(plan, { fmr = null } = {}) {
   TL.forEach((e) => { if (e.bridge) (TE[e.bridge] ||= {})[e.ch] = { s: e.start, d: e.dur }; });
   const CH = [];
   TL.forEach((e) => { if (!CH.length || CH[CH.length - 1].ch !== e.ch) CH.push({ ch: e.ch, start: e.start }); });
-  return { TL, CH, TE, TOTAL, keys, exts, grfs, sins, imps, crws, rcts, fils, vens, rpls, bridges: fmr ? arches.length : 0 };
+  return { TL, CH, TE, TOTAL, keys, exts, grfs, sins, imps, crws, rcts, fils, vens, rpls, ptys, zygs, regImps, bridges: fmr ? arches.length : 0 };
 }
 
 /** Olayda o anda işlenen diş: tek dişlik olayda odak diş, art arda işlenen dişlerde sıradaki diş */

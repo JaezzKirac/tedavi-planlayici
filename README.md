@@ -1,7 +1,8 @@
 # Treatment Planner (React + Vite + Three.js)
 
 3D implant / crown / extraction / bone graft treatment plans for Clinic Group.
-Staff sign in, mark the teeth on a dental chart and play the 3D treatment animation. Opening the plan screen saves the
+Staff sign in, mark the patient's current mouth (missing teeth, existing crowns and implants), choose the treatments
+and play the 3D treatment animation. Opening the plan screen saves the
 patient to the dashboard of the staff member who made it; the dashboard has a Copy link button for the patient link.
 
 ## Users

@@ -9,7 +9,7 @@ const PlayIcon = () => <path d="M8 5v14l11-7z" />;
 const PauseIcon = () => <path d="M7 5h4v14H7zM13 5h4v14h-4z" />;
 const SPEEDS = [1, 1.5, 2, 3];
 
-export default function PlanView({ patient, plan, fmr = null, patientMode, onEdit, onNew, record, onSaved }) {
+export default function PlanView({ patient, plan, fmr = null, mouth = {}, patientMode, onEdit, onNew, record, onSaved }) {
   const tl = useMemo(() => buildTimeline(plan, { fmr }), [plan, fmr]);
   const tlRef = useRef(tl);
   tlRef.current = tl;
@@ -31,10 +31,10 @@ export default function PlanView({ patient, plan, fmr = null, patientMode, onEdi
   // Paneldeki "Copy link" bu kayıttaki kodu kullanır; linkte baş harfler yazar.
   useEffect(() => {
     if (patientMode) return;
-    const initials = record ? !!record.initials : true, code = encodePlan(patient, plan, initials, fmr);
+    const initials = record ? !!record.initials : true, code = encodePlan(patient, plan, initials, fmr, mouth);
     if (record && record.code === code) { setSaveState({ state: "saved" }); return; }
     setSaveState({ state: "saving" });
-    const body = { patient, plan, code, initials, fmr };
+    const body = { patient, plan, mouth, code, initials, fmr };
     (record ? api.updatePlan(record.id, body) : api.createPlan(body)).then(
       (d) => { onSaved?.(d.plan); setSaveState({ state: "saved" }); },
       (e) => setSaveState({ state: "error", msg: e.message }),
@@ -77,10 +77,10 @@ export default function PlanView({ patient, plan, fmr = null, patientMode, onEdi
     });
     if (!scene) { setGlError(true); return undefined; }
     setGlError(false);
-    scene.build(plan, tl.TE, fmr);
+    scene.build(plan, tl.TE, fmr, mouth);
     sceneRef.current = scene;
     return () => { abortRef.current?.abort(); scene.dispose(); sceneRef.current = null; };
-  }, [tl, plan, fmr]);
+  }, [tl, plan, fmr, mouth]);
 
   const start = () => { const s = pb.current; s.playing = true; s.played = true; setPlaying(true); setStarted(true); };
   const play = () => { if (pb.current.t >= tlRef.current.TOTAL - 5) pb.current.t = 0; sceneRef.current?.autoCamera(); start(); };
@@ -94,7 +94,7 @@ export default function PlanView({ patient, plan, fmr = null, patientMode, onEdi
     abortRef.current = ac;
     try {
       const { exportVideo } = await import("../lib/exportVideo.js");
-      const blob = await exportVideo({ scene: sceneRef.current, tl, plan, fmr, speed, signal: ac.signal, onProgress: setExporting });
+      const blob = await exportVideo({ scene: sceneRef.current, tl, plan, fmr, mouth, speed, signal: ac.signal, onProgress: setExporting });
       const url = URL.createObjectURL(blob), a = document.createElement("a");
       a.href = url; a.download = `treatment-plan-${patient.name.trim().replace(/\s+/g, "-") || "patient"}.mp4`;
       a.click();
@@ -133,7 +133,7 @@ export default function PlanView({ patient, plan, fmr = null, patientMode, onEdi
   for (let i = idx; i >= 0 && !focusN; i--) focusN = tl.TL[i].focus;
   if (!focusN) focusN = tl.keys[0];
   const cal = info.cal;
-  const cap = captionOf(e, plan, fmr);
+  const cap = captionOf(e, plan, fmr, mouth);
 
   return (
     <section className={"planview" + (exporting !== null ? " busy" : "")}>
@@ -150,7 +150,7 @@ export default function PlanView({ patient, plan, fmr = null, patientMode, onEdi
         </div>
         {!patientMode && (
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-            <button className="btn ghost" type="button" onClick={() => { pause(); onEdit(); }}>← Edit chart</button>
+            <button className="btn ghost" type="button" onClick={() => { pause(); onEdit(); }}>← Edit treatment</button>
             <button className="btn ghost" type="button" onClick={() => { pause(); onNew(); }}>New patient</button>
           </div>
         )}
@@ -238,7 +238,7 @@ export default function PlanView({ patient, plan, fmr = null, patientMode, onEdi
           <div className="summary">
             {[
               ["Extraction", tl.exts], ["Graft", tl.grfs], ["Sinus lift", tl.sins], ["Root canal", tl.rcts], ["Filling", tl.fils],
-              ["Implant", tl.imps], ["Crown", tl.crws], ["Crown replacement", tl.rpls], ["Veneer", tl.vens],
+              ["Implant", tl.regImps], ["Zygomatic implant", tl.zygs], ["Pterygoid implant", tl.ptys], ["Crown", tl.crws], ["Crown replacement", tl.rpls], ["Veneer", tl.vens],
             ].filter(([, list]) => list.length).map(([label, list]) => <div key={label}><span className="label">{label}</span><b>{list.length}</b></div>)}
             {fmr && <div><span className="label">Bridge</span><b>{tl.bridges}</b></div>}
           </div>

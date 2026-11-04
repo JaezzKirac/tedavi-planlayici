@@ -4,7 +4,7 @@ import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { clamp, lerp, ease } from "../lib/anim.js";
 import logoUrl from "../logo/clinic-group-logo-ldvLUm8e.webp";
 import { activeTooth } from "../data/timeline.js";
-import { BRIDGE_K } from "../data/teeth.js";
+import { bridgeK } from "../data/teeth.js";
 
 /* ---- diş ölçüleri (mm) ---- */
 const DIM={
@@ -51,7 +51,7 @@ export function createJawScene({ canvas, container, labelEl, leaderEl, xrayEl, d
   renderer.shadowMap.autoUpdate = false; // yalnızca dişler hareket ederken güncellenir
 
   const M = {}, GEO = {};
-  let PLAN = {}, TE = {}, FMR = null, gumOp = 1, raf = 0, cap = null, dead = false; // cap: video kaydı durumu
+  let PLAN = {}, TE = {}, FMR = null, MOUTH = {}, gumOp = 1, raf = 0, cap = null, dead = false; // cap: video kaydı durumu
 
   const scene = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera(34, 1, 0.5, 800);
@@ -234,6 +234,16 @@ export function createJawScene({ canvas, container, labelEl, leaderEl, xrayEl, d
     g.computeVertexNormals();GEO[key]=g;return g;
   }
 
+  // veneer: dişi birebir saran ince porselen kabuk; dişin geometrisi yüzey normaline doğru biraz şişirilir
+  function veneerGeo(src,rs,d,h){
+    const p=src.attributes.position,nm=src.attributes.normal,ix=src.index.array,pos=new Float32Array(p.count*3);
+    for(let i=0;i<p.count;i++){pos[i*3]=p.getX(i)+nm.getX(i)*.2;pos[i*3+1]=p.getY(i)+nm.getY(i)*.2;pos[i*3+2]=p.getZ(i)+nm.getZ(i)*.2;}
+    // kabuk dişi kesici kenarı dahil tamamen sarar; yalnız dişeti altındaki boyun kısmı dışarıda kalır (yırtık kenar oluşmaz)
+    const keep=i=>p.getY(i)>h*.03,out=[];
+    for(let t=0;t<ix.length;t+=3)if(keep(ix[t])&&keep(ix[t+1])&&keep(ix[t+2]))out.push(ix[t],ix[t+1],ix[t+2]);
+    const g=new THREE.BufferGeometry();g.setAttribute("position",new THREE.BufferAttribute(pos,3));g.setAttribute("normal",nm.clone());g.setIndex(out);
+    return g;
+  }
   function implantMesh(){
     const grp=new THREE.Group();
     if(!GEO.imp){
@@ -313,6 +323,7 @@ export function createJawScene({ canvas, container, labelEl, leaderEl, xrayEl, d
         const th=-Math.atan2(tg.z,tg.x)+rnd(n)*.08;holder.rotation.y=th;
         const out=new THREE.Vector3(p.x,0,p.z+8).normalize();
         const rs=Math.sign(out.x*Math.sin(th)+out.z*Math.cos(th))||1;
+        const ST=MOUTH[n]||""; // "" doğal, m eksik, c kronlu, i implantlı
         const P=PLAN[n]||{},I=!!P.imp,C=!!P.crw,E=!!P.ext,GR=!!P.grf,RCT=!!P.rct,VEN=!!P.ven,SIN=!!P.sin,FIL=!!P.fil,RPL=!!P.rpl;
         const treat=I||C||E||GR||RCT||VEN||SIN||FIL||RPL;
         const geo=crownGeo(k,w,d,h);
@@ -322,23 +333,32 @@ export function createJawScene({ canvas, container, labelEl, leaderEl, xrayEl, d
         const root=new THREE.Mesh(new THREE.CylinderGeometry(Math.min(w,d)*.36,Math.min(w,d)*.13,15,10),(E||RCT)?M.root.clone():M.root);root.position.y=-7.2;
         tilt.add(tooth,root);
         if(FA&&!PLAN[n]){tooth.visible=false;root.visible=false;}
-        if(FA&&k<=BRIDGE_K&&!(PLAN[n]&&PLAN[n].own)){const bt=new THREE.Mesh(geo,M.bTemp);bt.scale.set(1.04,1,1.04);bt.castShadow=true;bt.visible=false;holder.add(bt);bridgeTeeth[side].push({k,bt,p:p.clone()});}
-        const o={n,holder,tilt,tz0:tilt.rotation.z,tooth,toothMat:tMat,root,w,d,h,rs,upper,treat,imp:I,crw:C,ext:E,grf:GR,rct:RCT,ven:VEN,sin:SIN,fil:FIL,rpl:RPL};
+        if(ST==="m"||ST==="i"){tooth.visible=false;root.visible=false;}
+        if(FA&&k<=bridgeK(FMR,upper)&&!(PLAN[n]&&PLAN[n].own)){const bt=new THREE.Mesh(geo,M.bTemp);bt.scale.set(1.04,1,1.04);bt.castShadow=true;bt.visible=false;holder.add(bt);bridgeTeeth[side].push({k,bt,p:p.clone()});}
+        const o={long:!!(P.zyg||P.pty),n,holder,tilt,tz0:tilt.rotation.z,tooth,toothMat:tMat,root,w,d,h,rs,upper,treat,imp:I,crw:C,ext:E,grf:GR,rct:RCT,ven:VEN,sin:SIN,fil:FIL,rpl:RPL};
         if(E){tMat.transparent=true;o.rootMat=root.material;}
         if(C||RPL){
           o.crownMat=M.zirc.clone();
           o.crown=new THREE.Mesh(geo,o.crownMat);o.crown.scale.set(1.03,1.02,1.03);o.crown.castShadow=true;o.crown.visible=false;
-          (I?holder:tilt).add(o.crown);
+          (I||ST==="i"?holder:tilt).add(o.crown);
         }
         if(I){
           if(!E){tooth.visible=false;root.visible=false;}
           // All-on-4: arka implantlar ~30° geriye (distale) açılı; holder'ın +x ekseni çene boyunca geriye bakar
-          const ig=new THREE.Group();if(FA&&FMR.type===4&&k===5)ig.rotation.z=.55;holder.add(ig);
+          const ig=new THREE.Group();holder.add(ig);o.ig=ig;
           o.implant=implantMesh();o.implant.visible=false;ig.add(o.implant);
+          if(P.zyg){
+            // zygomatic: dışa ve yukarı açılı, ucu elmacık kemiğine tutunur. Gerçekte ~30–50 mm; hastayı ürkütmemek için kısa ve ince gösterilir
+            ig.rotation.x=-rs*.4;ig.rotation.z=.15;o.implant.scale.set(.7,1.75,.7);
+            const zb=new THREE.Mesh(new THREE.SphereGeometry(1,16,10),M.bone);zb.scale.set(4.5,3.4,5);zb.position.y=-20;ig.add(zb);
+          }else if(P.pty){
+            // pterygoid: en arkadan geriye doğru açılı; normal implanttan biraz uzun
+            ig.rotation.z=.7;o.implant.scale.set(.8,1.25,.8);
+          }else if(FA&&FMR.type===4&&k===5)ig.rotation.z=.55; // All-on-4: arka implantlar ~30° geriye açılı
           o.abut=abutMesh();o.abut.visible=false;holder.add(o.abut);
           o.glowMat=M.glow.clone();o.glow=new THREE.Mesh(new THREE.SphereGeometry(1,12,8),o.glowMat);o.glow.scale.set(3.6,7.6,3.6);o.glow.position.y=-8.6;o.glow.visible=false;holder.add(o.glow);
         }
-        if(E||(!I&&C)||FIL){
+        if((E&&ST!=="i")||(!I&&C)||FIL){
           o.decayMat=M.decay.clone();
           o.decay=new THREE.Mesh(new THREE.SphereGeometry(1,10,6),o.decayMat);
           o.decay.scale.set(Math.min(w,d)*.24,Math.min(w,d)*.12,Math.min(w,d)*.2);o.decay.position.set(w*.12,h*.84,d*.05);
@@ -359,11 +379,17 @@ export function createJawScene({ canvas, container, labelEl, leaderEl, xrayEl, d
           }
           o.mem=new THREE.Mesh(new THREE.CylinderGeometry(R+1.4,R+1.4,.12,28),o.memMat);o.mem.position.y=.4;gg.add(o.mem);
         }
-        if(RPL){
-          // eski kron: daha mat ve sarımsı; altındaki diş zaten kron için küçültülmüş
+        if(ST==="i"){
+          // hastada zaten olan implant: yerinde, dayanağı ve kronuyla tek grup (çıkarılırken birlikte hareket eder)
+          o.exI=true;const eg=new THREE.Group();holder.add(eg);o.exG=eg;
+          const im=implantMesh();im.position.y=-3;eg.add(im);
+          const ab=abutMesh();ab.position.y=-3;eg.add(ab);
+        }
+        if(RPL||ST==="c"||ST==="i"){
+          // mevcut (eski) kron: daha mat ve sarımsı; altındaki diş kron için küçültülmüş
           o.oldMat=M.zirc.clone();o.oldMat.color.set(0xe6d4ac);o.oldMat.roughness=.5;
-          o.old=new THREE.Mesh(geo,o.oldMat);o.old.scale.set(1.03,1.02,1.03);o.old.castShadow=true;tilt.add(o.old);
-          tooth.scale.set(.8,.74,.8);tMat.color.copy(M.DENTIN);
+          o.old=new THREE.Mesh(geo,o.oldMat);o.old.scale.set(1.03,1.02,1.03);o.old.castShadow=true;(ST==="i"?o.exG:tilt).add(o.old);
+          if(ST!=="i"){tooth.scale.set(.8,.74,.8);tMat.color.copy(M.DENTIN);}
         }
         if(FIL){o.fillMat=M.fillMat.clone();o.fill=new THREE.Mesh(new THREE.SphereGeometry(1,20,12),o.fillMat);o.fill.position.copy(o.decay.position);o.fill.visible=false;tilt.add(o.fill);}
         if(RCT){
@@ -374,9 +400,8 @@ export function createJawScene({ canvas, container, labelEl, leaderEl, xrayEl, d
         }
         if(VEN){
           // veneer: dişin dış (dudak/yanak) yüzünü kaplayan ince kabuk; rs>0 ise dış yüz yerel +z
-          o.venMat=M.zirc.clone();o.venMat.vertexColors=false;o.venMat.color.set(0xfffdf8);
-          o.veneer=new THREE.Mesh(new THREE.SphereGeometry(1,28,18,0,Math.PI,Math.PI*.1,Math.PI*.74),o.venMat);
-          o.veneer.scale.set(w/2*1.07,h*.56,d/2*1.12);o.veneer.position.y=h*.5;if(rs<0)o.veneer.rotation.y=Math.PI;o.veneer.visible=false;tilt.add(o.veneer);
+          o.venMat=M.zirc.clone();o.venMat.vertexColors=false;o.venMat.color.set(0xfffdf8);o.venMat.side=THREE.DoubleSide;
+          o.veneer=new THREE.Mesh(veneerGeo(geo,rs,d,h),o.venMat);o.veneer.visible=false;tilt.add(o.veneer);
         }
         if(SIN){
           // sinüs lifting: kökün üstünde sinüs boşluğu; zar kaldırılır, altı greftle dolar
@@ -508,11 +533,19 @@ export function createJawScene({ canvas, container, labelEl, leaderEl, xrayEl, d
   function updExt(o,te,t){
     const x=te.ext,on=!!x&&t>=x.s,px=x?clamp((t-x.s)/(x.d*.8)):0,gone=px>=1;
     const lift=ease(clamp((px-.35)/.5)),fade=1-clamp((px-.6)/.3);
+    if(o.exG){
+      // eski implant: önce sökülür (döndürülür), sonra yuvasından çıkar
+      o.exG.rotation.y=ease(clamp(px/.6))*-14;o.exG.position.y=lerp(0,18,lift);o.exG.visible=!gone;
+      if(o.oldMat)o.oldMat.opacity=fade;
+      o.tooth.visible=o.root.visible=false;o.rootMat.visible=false; // implantın yerinde doğal kök yok
+      return;
+    }
     o.tilt.position.y=lerp(0,18,lift);
     o.tilt.rotation.z=o.tz0+(px<.35?Math.sin(t*.03)*.07*Math.sin(px/.35*Math.PI):0);
     o.toothMat.opacity=fade;o.toothMat.depthWrite=fade>=1;
     o.rootMat.opacity=.75*fade;o.decayMat.opacity=fade;
     o.tooth.visible=o.root.visible=o.decay.visible=!gone;
+    if(o.old){o.oldMat.opacity=fade;o.old.visible=!gone;}
     o.rootMat.visible=M.root.visible||(on&&px>.35);
   }
   // greft: granüller düşerek yuvayı doldurur, membran örtülür; kemikleşmede kemik rengine dönüp kaybolur
@@ -544,8 +577,8 @@ export function createJawScene({ canvas, container, labelEl, leaderEl, xrayEl, d
   function updRpl(o,te,t){
     const c=te.crem,f=te.fit,on=!!c&&t>=c.s,pp=on?clamp((t-c.s)/(c.d*.85)):0,lift=ease(clamp((pp-.45)/.45));
     o.old.visible=pp<1;o.old.position.y=lerp(0,14,lift);o.oldMat.opacity=1-clamp((pp-.6)/.4);
-    o.tooth.visible=!(f&&clamp((t-f.s)/(f.d*.6))>=1);
-    return on&&pp<.45?{o,mode:"prep",p:pp/.45}:null;
+    if(!o.exI)o.tooth.visible=!(f&&clamp((t-f.s)/(f.d*.6))>=1);
+    return on&&pp<.45&&!o.exI?{o,mode:"prep",p:pp/.45}:null;
   }
   // dolgu: matkap çürüğü temizler, kompozit yerleşir, mavi ışıkla sertleşir
   function updFill(o,te,t){
@@ -604,7 +637,8 @@ export function createJawScene({ canvas, container, labelEl, leaderEl, xrayEl, d
         const s=te.surgery,ps=s?clamp((t-s.s)/s.d):0,on=!!s&&t>=s.s;
         if(on&&ps<.36) tool={o,mode:"drill",p:ps/.36};
         const pi=clamp((ps-.38)/.5);
-        o.implant.visible=on&&ps>=.38;o.implant.position.y=lerp(15,-3,ease(pi));o.implant.rotation.y=-ease(pi)*24;
+        // elmacık / pterygoid kemiğine uzanan uzun implantlar yalnız röntgen görünümünde görünür (o kemikler modelde yok)
+        o.implant.visible=on&&ps>=.38&&(!(o.long)||M.bone.visible);o.implant.position.y=lerp(15,-3,ease(pi));o.implant.rotation.y=-ease(pi)*24;
         const h=te.heal;o.glow.visible=!!h&&t>=h.s&&t<h.s+h.d;
         if(o.glow.visible){const ph=(t-h.s)/h.d;o.glowMat.opacity=(.22+.16*Math.sin((t-h.s)*.006))*Math.min(1,ph*5,(1-ph)*5);}
         const a=te.abut,pa=a?clamp((t-a.s)/(a.d*.6)):0;
@@ -622,7 +656,7 @@ export function createJawScene({ canvas, container, labelEl, leaderEl, xrayEl, d
     if(!filing)G.file.visible=false;
     const b=G.bur;
     if(tool){
-      const par=tool.mode==="drill"?tool.o.holder:tool.o.tooth.parent;if(b.parent!==par)par.add(b);
+      const par=tool.mode==="drill"?(tool.o.ig||tool.o.holder):tool.o.tooth.parent;if(b.parent!==par)par.add(b);
       b.visible=true;b.rotation.y=tool.o.rs<0?Math.PI:0;b.userData.spin.rotation.y=t*.09;
       if(tool.mode==="drill"){
         const p=tool.p,y=p<.75?lerp(20,-13,ease(p/.75)):lerp(-13,22,ease((p-.75)/.25));
@@ -783,8 +817,8 @@ export function createJawScene({ canvas, container, labelEl, leaderEl, xrayEl, d
 
   return {
     /** Planı ve zaman çizelgesindeki diş olaylarını yükler, modeli yeniden kurar */
-    build(plan, te, fmr = null) {
-      PLAN = plan; TE = te; FMR = fmr; gumOp = 1;
+    build(plan, te, fmr = null, mouth = {}) {
+      PLAN = plan; TE = te; FMR = fmr; MOUTH = mouth; gumOp = 1;
       buildJaw(); G.dirty = true;
       const tgt = V().set(OV_T.x, OV_T.y, OV_T.z);
       controls.target.copy(tgt);

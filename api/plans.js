@@ -7,7 +7,7 @@ import { requireUser } from "./_lib/auth.js";
 import { store } from "./_lib/store.js";
 
 // diş başına tedavi işaretleri (src/data/teeth.js FLAGS ile aynı)
-const TX = ["ext", "grf", "sin", "imp", "crw", "rpl", "rct", "fil", "ven", "own"];
+const TX = ["ext", "grf", "sin", "imp", "pty", "zyg", "crw", "rpl", "rct", "fil", "ven", "own"];
 const str = (v, max) => String(v ?? "").trim().slice(0, max);
 
 function clean(body) {
@@ -24,8 +24,11 @@ function clean(body) {
   const code = String(body.code || "");
   if (!/^[A-Za-z0-9_-]{1,4000}$/.test(code)) throw fail(400, "Invalid link code");
   const f = body.fmr || {};
-  const fmr = [4, 6, 8].includes(+f.type) && ["U", "L", "UL"].includes(f.arches) ? { type: +f.type, arches: f.arches } : null;
-  return { patient, plan, code, initials: !!body.initials, fmr };
+  const fmr = [4, 6, 8].includes(+f.type) && ["U", "L", "UL"].includes(f.arches) ? { type: +f.type, arches: f.arches, pty: !!f.pty, zyg: !!f.zyg } : null;
+  // ağzın bugünkü hâli: m eksik, c kronlu, i implantlı
+  const mouth = {};
+  for (const [k, v] of Object.entries(body.mouth || {})) if (/^[1-4][1-8]$/.test(k) && ["m", "c", "i"].includes(v)) mouth[k] = v;
+  return { patient, plan, mouth, code, initials: !!body.initials, fmr };
 }
 
 export default handle(async (req, res) => {

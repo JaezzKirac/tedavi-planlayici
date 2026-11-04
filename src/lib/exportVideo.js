@@ -52,7 +52,7 @@ function wrapper(ctx) {
  * @returns {Promise<Blob>} video/mp4
  * signal iptal edilirse AbortError fırlatır. speed oynatıcıda seçili hızdır.
  */
-export async function exportVideo({ scene, tl, plan, fmr, speed, signal, onProgress }) {
+export async function exportVideo({ scene, tl, plan, fmr, mouth = {}, speed, signal, onProgress }) {
   const config = await pickConfig();
   if (!config) throw new Error("This browser can't create MP4 video. Please use an up-to-date Chrome or Edge.");
   await document.fonts?.ready;
@@ -91,7 +91,7 @@ export async function exportVideo({ scene, tl, plan, fmr, speed, signal, onProgr
         pill(ctx, label.text, label.lx - (ctx.measureText(label.text).width + px(40)) / 2, label.ly - px(24), { stroke: "#8EA2FF" });
       }
 
-      const cap = captionOf(e, plan, fmr);
+      const cap = captionOf(e, plan, fmr, mouth);
       ctx.fillStyle = "#0B1029"; ctx.fillRect(0, GL_H, W, H - GL_H);
       ctx.textBaseline = "alphabetic";
       ctx.fillStyle = "#93A5FF"; ctx.font = `700 ${px(22)}px ${DISPLAY}`;

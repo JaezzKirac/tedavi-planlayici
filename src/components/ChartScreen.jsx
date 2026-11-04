@@ -1,10 +1,12 @@
 import { useState } from "react";
 import ToothChart from "./ToothChart.jsx";
-import { FLAGS, emptyTx, toothName, txLabel, sortedKeys, fmtDate, fixTx, fmrPlan, fmrMarks, inFmr, fmrLabel, ARCH_NAMES, sinusOk, naturalOk, hasI, ARCH_ORDER } from "../data/teeth.js";
+import { FLAGS, emptyTx, toothName, txLabel, sortedKeys, fmtDate, fixTx, fmrPlan, fmrMarksFor, inFmr, fmrLabel, ARCH_NAMES, sinusOk, ptyOk, zygOk, hasI, hasP, hasZ, ARCH_ORDER } from "../data/teeth.js";
 
 // tool: araç id, k: plandaki alan
 const TOOLS = [
   { id: "implant", k: "imp", label: "Implant", dot: "var(--ti)" },
+  { id: "pterygoid", k: "pty", label: "Pterygoid implant", dot: "var(--ti-dark)" },
+  { id: "zygomatic", k: "zyg", label: "Zygomatic implant", dot: "var(--ti-dark)" },
   { id: "crown", k: "crw", label: "Crown", dot: "var(--crownC)" },
   { id: "replace", k: "rpl", label: "Replace crown", dot: "var(--rplC)" },
   { id: "extract", k: "ext", label: "Extraction", dot: "var(--extC)" },
@@ -15,102 +17,100 @@ const TOOLS = [
   { id: "veneer", k: "ven", label: "Veneer", dot: "var(--venC)" },
   { id: "clear", label: "Clear", dot: "var(--line)" },
 ];
-// tam ağız restorasyonunda dişler iki şekilde işaretlenir; işaretsiz diş ağızda yok demektir
-const FMR_TOOLS = [
-  { id: "x", label: "Extract (tooth present)", dot: "var(--extC)" },
-  { id: "o", label: "Own tooth (keep)", dot: "var(--ownC)" },
-];
-const HINT = "Pick a tool and tap a tooth. Tapping the same tooth again removes the mark.";
-const FMR_HINT = "Mark the patient's own teeth: teeth that will be extracted, and teeth that will be kept. Unmarked teeth are treated as missing.";
-const FMR_DEFAULT = { type: 4, arches: "UL" };
-const TAG = { rpl: "rpl", ext: "ext", grf: "grf", sin: "sin", imp: "imp", crw: "crw", rct: "rct", fil: "fil", ven: "ven", own: "own" };
+const LABEL = Object.fromEntries(FLAGS.map(([k, , label]) => [k, label]));
+const HINT = "Pick a treatment and tap a tooth. Tapping the same tooth again removes it.";
+const FMR_HINT = "Teeth that are in the mouth today are extracted. Tap a tooth to keep it instead. Existing implants are kept; tap one to have it removed.";
+const FMR_DEFAULT = { type: 4, arches: "UL", pty: false, zyg: false };
+const TAG = { rpl: "rpl", ext: "ext", grf: "grf", sin: "sin", imp: "imp", pty: "imp", zyg: "imp", crw: "crw", rct: "rct", fil: "fil", ven: "ven", own: "own" };
 
-export default function ChartScreen({ patient, plan, setPlan, fmr, setFmr, onBack, onNext }) {
-  const [tool, setTool] = useState(fmr ? "x" : "implant");
+/** İşlem bu dişe yapılamıyorsa nedenini döndürür. st: dişin bugünkü hâli */
+function blocked(k, n, st, cur) {
+  const name = LABEL[k].toLowerCase();
+  // eski implant: kronu değiştirilebilir ya da implant çıkarılabilir (Extraction); çıkarılınca yerine yenisi planlanabilir
+  if (st === "i" && ["rct", "fil", "ven"].includes(k)) return "this tooth has an implant: replace its crown, or remove the implant with Extraction";
+  if (st === "m" && ["ext", "rct", "fil", "ven", "rpl"].includes(k)) return "this tooth is missing (see the Current mouth step)";
+  if (k === "rpl" && st !== "c") return "there is no existing crown to replace (mark it on the Current mouth step)";
+  if (["fil", "ven"].includes(k) && (st === "c" || cur.crw)) return `a crowned tooth doesn't need a ${name}`;
+  if (["rct", "fil", "ven"].includes(k) && (cur.ext || cur.imp)) return `${name} needs a tooth that stays (not extracted or replaced by an implant)`;
+  if (k === "ven" && n % 10 > 5) return "veneers are for front teeth and premolars";
+  if (k === "sin" && !sinusOk(n)) return "sinus lift is only done in the upper back jaw (premolars and molars)";
+  if (k === "pty" && !ptyOk(n)) return "pterygoid implants go at the very back of the upper jaw (second molar / wisdom tooth area)";
+  if (k === "zyg" && !zygOk(n)) return "zygomatic implants go in the upper jaw (canine to first molar area)";
+  return null;
+}
+
+export default function ChartScreen({ patient, mouth, plan, setPlan, fmr, setFmr, onBack, onNext }) {
+  const [tool, setTool] = useState("implant");
   const [hint, setHint] = useState(fmr ? FMR_HINT : HINT);
-  const [noTeeth, setNoTeeth] = useState(false); // tam ağız: hastanın hiç kendi dişi kalmamış
   const keys = sortedKeys(plan);
 
   function setMode(on) {
     if (!!fmr === on) return;
-    if (on) {
-      setFmr(FMR_DEFAULT); setPlan(fmrPlan(new Map(), FMR_DEFAULT)); setTool("x"); setHint(FMR_HINT);
-    } else {
-      setFmr(null); setPlan({}); setTool("implant"); setHint(HINT);
-    }
-    setNoTeeth(false);
+    if (on) { setFmr(FMR_DEFAULT); setPlan(fmrPlan(fmrMarksFor(mouth, FMR_DEFAULT), FMR_DEFAULT)); setHint(FMR_HINT); }
+    else { setFmr(null); setPlan({}); setHint(HINT); }
   }
 
-  // tip ya da çene değişince işaretler korunur, implant pozisyonları yeniden hesaplanır
+  // tip, çene ya da ek implant seçeneği değişince işaretler korunur, implant pozisyonları yeniden hesaplanır
   function setOption(next) {
     const f = { ...fmr, ...next };
-    const marks = new Map([...fmrMarks(plan)].filter(([n]) => inFmr(n, f)));
-    setFmr(f); setPlan(fmrPlan(marks, f));
+    if (!f.arches.includes("U")) f.pty = f.zyg = false;
+    setFmr(f); setPlan(fmrPlan(fmrMarksFor(mouth, f, plan), f));
   }
 
   function toggleSingle(n) {
     const say = (msg) => setHint(`${n} · ${toothName(n)} → ${msg}`);
-    const next = { ...plan };
-    if (tool === "clear") { delete next[n]; setPlan(next); say("mark removed"); return; }
-    const t = TOOLS.find((x) => x.id === tool);
+    const st = mouth[n] || "", next = { ...plan };
+    if (tool === "clear") { delete next[n]; setPlan(next); say("treatment removed"); return; }
+    let { k } = TOOLS.find((x) => x.id === tool);
+    if (k === "crw" && (st === "c" || st === "i") && !plan[n]?.ext) k = "rpl"; // kronlu dişe yeni kron = kron değişimi
     const cur = { ...emptyTx(), ...(plan[n] || {}) };
-    const turningOn = !cur[t.k];
-    // yalnızca uygun dişe yapılabilen işlemler
-    if (turningOn) {
-      if (t.k === "sin" && !sinusOk(n)) { say("sinus lift is only done in the upper back jaw (premolars and molars)"); return; }
-      if (["rct", "fil", "ven"].includes(t.k) && !naturalOk(cur)) { say(`${t.label.toLowerCase()} needs the patient's own tooth (not extracted or replaced by an implant)`); return; }
-      if (["fil", "ven"].includes(t.k) && (cur.crw || cur.rpl)) { say(`a crowned tooth doesn't need a ${t.label.toLowerCase()}`); return; }
-      if (t.k === "rpl" && !naturalOk(cur)) { say("crown replacement needs the patient's own tooth (not extracted or replaced by an implant)"); return; }
-      if (t.k === "ven" && n % 10 > 5) { say("veneers are for front teeth and premolars"); return; }
+    const turningOn = !cur[k];
+    if (turningOn) { const why = blocked(k, n, st, cur); if (why) { say(why); return; } }
+    const hadImp = cur.imp, hadExt = cur.ext;
+    cur[k] = turningOn ? 1 : 0;
+    if (turningOn && k === "rpl") cur.crw = cur.fil = cur.ven = 0; // yeni kron bunların yerini alır
+    if (k === "pty" || k === "zyg") {
+      if (turningOn) { cur.imp = 1; cur[k === "pty" ? "zyg" : "pty"] = 0; } else cur.imp = 0;
     }
-    const hadImp = cur.imp;
-    cur[t.k] = turningOn ? 1 : 0;
-    if (t.k === "rpl" && turningOn) { cur.crw = cur.fil = cur.ven = 0; } // yeni kron bunların yerini alır
-    const note = fixTx(cur, hadImp && !cur.imp);
-    if (FLAGS.some(([k]) => cur[k])) next[n] = cur; else delete next[n];
+    const note = fixTx(cur, hadImp && !cur.imp, st, hadExt && !cur.ext);
+    if (FLAGS.some(([x]) => cur[x])) next[n] = cur; else delete next[n];
     setPlan(next);
-    say(next[n] ? `${txLabel(next, n)}${note}` : "mark removed");
+    const lbl = (x) => (st === "i" ? x.replace("Extraction", "Implant removal").replace("extraction added", "implant removal added") : x);
+    say(next[n] ? lbl(`${txLabel(next, n)}${note}`) : "treatment removed");
   }
 
-  // tüm kronları değişecek hastalar için: 20 yaş dişleri hariç seçili çenedeki bütün dişler
+  // bütün mevcut kronları değiştirmek için (implant üstündekiler dahil)
   function replaceAll(arch) {
+    const list = ARCH_ORDER.filter((n) => (arch === "A" || (arch === "U") === n < 30) && (mouth[n] === "c" || mouth[n] === "i"));
+    if (!list.length) { setHint("No existing crowns in this jaw. Mark them on the Current mouth step."); return; }
     const next = { ...plan };
-    const list = ARCH_ORDER.filter((n) => n % 10 <= 7 && (arch === "A" || (arch === "U") === n < 30));
-    let skipped = 0;
-    list.forEach((n) => {
-      const cur = { ...emptyTx(), ...(plan[n] || {}) };
-      if (!naturalOk(cur)) { skipped++; return; }
-      next[n] = { ...cur, rpl: 1, crw: 0, fil: 0, ven: 0 };
-    });
+    list.forEach((n) => { next[n] = { ...emptyTx(), ...(plan[n] || {}), rpl: 1, crw: 0, fil: 0, ven: 0 }; });
     setPlan(next);
-    setHint(`Crown replacement on ${list.length - skipped} teeth${skipped ? ` (${skipped} skipped: extracted or implant)` : ""}`);
+    setHint(`Crown replacement on ${list.length} teeth`);
   }
 
   function toggleFmr(n) {
-    if (!inFmr(n, fmr)) { setHint(`${n} · ${toothName(n)} → the ${ARCH_NAMES[n < 30 ? "U" : "L"]} is not part of this restoration`); return; }
-    const marks = fmrMarks(plan);
-    if (marks.get(n) === tool) marks.delete(n); else marks.set(n, tool);
+    const say = (msg) => setHint(`${n} · ${toothName(n)} → ${msg}`);
+    if (!inFmr(n, fmr)) { say(`the ${ARCH_NAMES[n < 30 ? "U" : "L"]} is not part of this restoration`); return; }
+    if (mouth[n] === "m") { say("missing (see the Current mouth step)"); return; }
+    const marks = fmrMarksFor(mouth, fmr, plan);
+    marks.set(n, marks.get(n) === "o" ? "x" : "o");
     setPlan(fmrPlan(marks, fmr));
-    if (marks.size) setNoTeeth(false);
-    const m = marks.get(n);
-    setHint(`${n} · ${toothName(n)} → ${m === "x" ? "present, will be extracted" : m === "o" ? "own tooth, will be kept" : "missing"}`);
+    const kind = mouth[n] === "i" ? "implant" : "tooth";
+    say(marks.get(n) === "o" ? `own ${kind}, will be kept` : mouth[n] === "i" ? "old implant will be removed" : "will be extracted");
   }
 
-  // tüm işaretleri siler; tam ağızda tip ve çene seçimi korunur
+  // tüm seçimleri siler; tam ağızda tip ve çene seçimi korunur, işaretler ağızdan yeniden gelir
   function clearAll() {
-    setPlan(fmr ? fmrPlan(new Map(), fmr) : {});
-    setNoTeeth(false);
+    setPlan(fmr ? fmrPlan(fmrMarksFor(mouth, fmr), fmr) : {});
     setHint("All selections cleared.");
   }
 
   function remove(n) { const next = { ...plan }; delete next[n]; setPlan(next); }
 
-  const extracted = keys.filter((n) => plan[n].ext);
-  const kept = keys.filter((n) => plan[n].own);
-  const implants = keys.filter((n) => hasI(plan, n));
-  // tam ağız: kendi dişleri işaretlenmeden (ya da "hiç dişi yok" onaylanmadan) devam edilmez
-  const fmrReady = !fmr || extracted.length + kept.length > 0 || noTeeth;
-  const canNext = keys.length > 0 && fmrReady;
+  const pick = (fn) => keys.filter((n) => fn(plan[n], n));
+  const extracted = pick((t) => t.ext), kept = pick((t) => t.own);
+  const implants = pick((t, n) => hasI(plan, n) && !hasP(plan, n) && !hasZ(plan, n)), ptys = pick((t) => t.pty), zygs = pick((t) => t.zyg);
 
   return (
     <section className="layout">
@@ -118,14 +118,14 @@ export default function ChartScreen({ patient, plan, setPlan, fmr, setFmr, onBac
         <div className="chart-head">
           <div>
             <div className="label">{patient.name}{patient.date ? " · " + fmtDate(patient.date) : ""}</div>
-            <h2>Dental chart</h2>
+            <h2>Treatment plan</h2>
           </div>
           <div className="modes" role="group" aria-label="Treatment type">
             <button type="button" aria-pressed={!fmr} onClick={() => setMode(false)}>Single teeth</button>
             <button type="button" aria-pressed={!!fmr} onClick={() => setMode(true)}>Full mouth restoration</button>
           </div>
         </div>
-        {fmr && (
+        {fmr ? (
           <div className="fmropts">
             <div className="tools" role="group" aria-label="Restoration type">
               {[4, 6, 8].map((t) => (
@@ -137,40 +137,49 @@ export default function ChartScreen({ patient, plan, setPlan, fmr, setFmr, onBac
                 <button key={a} type="button" aria-pressed={fmr.arches === a} onClick={() => setOption({ arches: a })}>{label}</button>
               ))}
             </div>
+            <div className="tools" role="group" aria-label="Special implants (upper jaw)">
+              <button type="button" disabled={!fmr.arches.includes("U")} aria-pressed={!!fmr.zyg} onClick={() => setOption({ zyg: !fmr.zyg })}>Zygomatic</button>
+              <button type="button" disabled={!fmr.arches.includes("U")} aria-pressed={!!fmr.pty} onClick={() => setOption({ pty: !fmr.pty })}>Pterygoid</button>
+            </div>
           </div>
-        )}
-        <div className="tools" role="group" aria-label="Treatment tool">
-          {(fmr ? FMR_TOOLS : TOOLS).map((t) => (
-            <button key={t.id} type="button" aria-pressed={tool === t.id} onClick={() => setTool(t.id)}>
-              <span className="dot" style={{ background: t.dot }} />{t.label}
-            </button>
-          ))}
-        </div>
-        {!fmr && tool === "replace" && (
-          <div className="tools" role="group" aria-label="Replace all crowns">
-            {[["U", "All upper"], ["L", "All lower"], ["A", "All teeth"]].map(([a, label]) => (
-              <button key={a} type="button" onClick={() => replaceAll(a)}>{label}</button>
-            ))}
-          </div>
+        ) : (
+          <>
+            <div className="tools" role="group" aria-label="Treatment">
+              {TOOLS.map((t) => (
+                <button key={t.id} type="button" aria-pressed={tool === t.id} onClick={() => setTool(t.id)}>
+                  <span className="dot" style={{ background: t.dot }} />{t.label}
+                </button>
+              ))}
+            </div>
+            {tool === "replace" && (
+              <div className="tools" role="group" aria-label="Replace all existing crowns">
+                {[["U", "All upper crowns"], ["L", "All lower crowns"], ["A", "All crowns"]].map(([a, label]) => (
+                  <button key={a} type="button" onClick={() => replaceAll(a)}>{label}</button>
+                ))}
+              </div>
+            )}
+          </>
         )}
         <div className="hint" aria-live="polite">{hint}</div>
-        <div className="archbox"><ToothChart plan={plan} fmr={fmr} onToggle={fmr ? toggleFmr : toggleSingle} /></div>
+        <div className="archbox"><ToothChart plan={plan} mouth={mouth} onToggle={fmr ? toggleFmr : toggleSingle} /></div>
       </div>
       <div className="side">
         <div className="card">
           <div className="sidehead">
             <div className="label">{fmr ? "Full mouth restoration" : "Selected treatments"}</div>
-            <button className="btn ghost sm clearall" type="button" disabled={fmr ? !(extracted.length + kept.length) : !keys.length} onClick={clearAll}>Clear all</button>
+            <button className="btn ghost sm clearall" type="button" disabled={!fmr && !keys.length} onClick={clearAll}>Clear all</button>
           </div>
           {fmr ? (
             <dl className="fmrsum">
               <div><dt>Treatment</dt><dd className="big">{fmrLabel(fmr)}</dd></div>
-              <div><dt>Own teeth · extracted</dt><dd>{extracted.length ? extracted.join(", ") : "none"}</dd></div>
-              <div><dt>Own teeth · kept</dt><dd>{kept.length ? kept.join(", ") : "none"}</dd></div>
-              <div><dt>Implant positions</dt><dd>{implants.join(", ")}</dd></div>
+              <div><dt>Teeth extracted</dt><dd>{extracted.length ? extracted.join(", ") : "none"}</dd></div>
+              <div><dt>Own teeth kept</dt><dd>{kept.length ? kept.join(", ") : "none"}</dd></div>
+              <div><dt>Implant positions</dt><dd>{implants.join(", ") || "none"}</dd></div>
+              {zygs.length > 0 && <div><dt>Zygomatic implants</dt><dd>{zygs.join(", ")}</dd></div>}
+              {ptys.length > 0 && <div><dt>Pterygoid implants</dt><dd>{ptys.join(", ")}</dd></div>}
               <div className="tot">
                 <span><b>{extracted.length}</b> extractions</span>
-                <span><b>{implants.length}</b> implants</span>
+                <span><b>{implants.length + zygs.length + ptys.length}</b> implants</span>
                 <span><b>{fmr.arches.length}</b> {fmr.arches.length === 1 ? "fixed bridge" : "fixed bridges"}</span>
               </div>
             </dl>
@@ -181,7 +190,7 @@ export default function ChartScreen({ patient, plan, setPlan, fmr, setFmr, onBac
                   <span className="fdi">{n}</span>
                   <span className="nm">{toothName(n)}
                     <small>
-                      {FLAGS.filter(([k]) => plan[n][k]).map(([k, , label]) => <span key={k} className={"tag " + TAG[k]}>{label.toUpperCase()}</span>)}
+                      {FLAGS.filter(([k]) => plan[n][k] && !(k === "imp" && (plan[n].pty || plan[n].zyg))).map(([k, , label]) => <span key={k} className={"tag " + TAG[k]}>{(k === "ext" && mouth[n] === "i" ? "Implant removal" : label).toUpperCase()}</span>)}
                     </small>
                   </span>
                   <button className="x" type="button" onClick={() => remove(n)} aria-label={`Remove tooth ${n}`}>×</button>
@@ -189,25 +198,18 @@ export default function ChartScreen({ patient, plan, setPlan, fmr, setFmr, onBac
               ))}
             </ul>
           ) : (
-            <p className="empty">No teeth selected yet.</p>
+            <p className="empty">No treatments selected yet.</p>
           )}
-          {fmr && !extracted.length && !kept.length && (
-            <div className="gate">
-              <p>Mark the patient's own teeth on the chart before continuing.</p>
-              <label className="tog">
-                <input type="checkbox" checked={noTeeth} onChange={(e) => setNoTeeth(e.target.checked)} />
-                The patient has no own teeth left in this {fmr.arches === "UL" ? "mouth" : "jaw"}
-              </label>
-            </div>
-          )}
-          <button className="btn" type="button" disabled={!canNext} onClick={onNext}>Create treatment plan →</button>
-          <button className="btn ghost" type="button" onClick={onBack}>← Patient details</button>
+          <button className="btn" type="button" disabled={!keys.length} onClick={onNext}>Create 3D plan →</button>
+          <button className="btn ghost" type="button" onClick={onBack}>← Current mouth</button>
         </div>
         <p className="note">
           {fmr && (fmr.type === 4
             ? "All-on-4: the two front implants are upright, the two back implants are angled to avoid the sinus and nerve and use the available bone. "
             : `All-on-${fmr.type}: more implants spread the biting force across the jaw. `)}
-          Numbers follow the FDI system: quadrant 1 upper right, 2 upper left, 3 lower left, 4 lower right. The chart is drawn as if you are facing the patient.
+          {fmr?.zyg && "Zygomatic: the back implants of the upper jaw are anchored in the cheekbone. "}
+          {fmr?.pty && "Pterygoid: an extra angled implant at the back of each side of the upper jaw. "}
+          Grey teeth on the chart are existing crowns or implants from the Current mouth step.
         </p>
       </div>
     </section>

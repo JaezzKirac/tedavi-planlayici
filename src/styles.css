@@ -16,7 +16,7 @@ img,canvas{max-width:100%}
   --crownC:#C27A1A; --crown-soft:#F6E7CF;
   --extC:#C2412F; --ext-soft:#F8E1DC;
   --graftC:#7A5BC0; --graft-soft:#ECE6F8;
-  --rplC:#B5651D; --rpl-soft:#F7E6D3; --sinC:#2C7FC4; --sin-soft:#DDEBF8; --rctC:#B83A78; --rct-soft:#F7E0EC; --filC:#4E7A8C; --fil-soft:#E0ECF0; --venC:#1B9C8F; --ven-soft:#D8F1EE; --ownC:#3D8B4F; --own-soft:#E0F1E4;
+  --exC:#8C99B0; --ex-fill:#E3E8F1; --rplC:#B5651D; --rpl-soft:#F7E6D3; --sinC:#2C7FC4; --sin-soft:#DDEBF8; --rctC:#B83A78; --rct-soft:#F7E0EC; --filC:#4E7A8C; --fil-soft:#E0ECF0; --venC:#1B9C8F; --ven-soft:#D8F1EE; --ownC:#3D8B4F; --own-soft:#E0F1E4;
   --gum:#E8A3A0; --gum-deep:#D27F7C; --mouth:#F6DCDA; --tongue:#EFB7B4;
   --bone:#EBDDC4; --bone-dot:#D9C6A4;
   --tooth:#FFFFFF; --tooth-edge:#A9B1C6; --crown:#FBFDFF;
@@ -31,7 +31,7 @@ img,canvas{max-width:100%}
   --crownC:#E8A64A; --crown-soft:#3A2E1C;
   --extC:#F0806B; --ext-soft:#41241F;
   --graftC:#AE95F0; --graft-soft:#2E2647;
-  --rplC:#E0A063; --rpl-soft:#3D2A18; --sinC:#6FB3F0; --sin-soft:#1C3150; --rctC:#EE7FB4; --rct-soft:#45203A; --filC:#8FBCCD; --fil-soft:#1F3540; --venC:#4FD3C4; --ven-soft:#173D3A; --ownC:#74CC88; --own-soft:#1D3A25;
+  --exC:#8F9BB8; --ex-fill:#2B3456; --rplC:#E0A063; --rpl-soft:#3D2A18; --sinC:#6FB3F0; --sin-soft:#1C3150; --rctC:#EE7FB4; --rct-soft:#45203A; --filC:#8FBCCD; --fil-soft:#1F3540; --venC:#4FD3C4; --ven-soft:#173D3A; --ownC:#74CC88; --own-soft:#1D3A25;
   --gum:#B0615E; --gum-deep:#8E4A48; --mouth:#3A2A2A; --tongue:#6E4242;
   --bone:#4B4234; --bone-dot:#5E5341;
   --tooth:#F1F3F8; --tooth-edge:#7F88A6; --crown:#FBFDFF;
@@ -42,7 +42,7 @@ img,canvas{max-width:100%}
   --crownC:#E8A64A; --crown-soft:#3A2E1C;
   --extC:#F0806B; --ext-soft:#41241F;
   --graftC:#AE95F0; --graft-soft:#2E2647;
-  --rplC:#E0A063; --rpl-soft:#3D2A18; --sinC:#6FB3F0; --sin-soft:#1C3150; --rctC:#EE7FB4; --rct-soft:#45203A; --filC:#8FBCCD; --fil-soft:#1F3540; --venC:#4FD3C4; --ven-soft:#173D3A; --ownC:#74CC88; --own-soft:#1D3A25;
+  --exC:#8F9BB8; --ex-fill:#2B3456; --rplC:#E0A063; --rpl-soft:#3D2A18; --sinC:#6FB3F0; --sin-soft:#1C3150; --rctC:#EE7FB4; --rct-soft:#45203A; --filC:#8FBCCD; --fil-soft:#1F3540; --venC:#4FD3C4; --ven-soft:#173D3A; --ownC:#74CC88; --own-soft:#1D3A25;
   --gum:#B0615E; --gum-deep:#8E4A48; --mouth:#3A2A2A; --tongue:#6E4242;
   --bone:#4B4234; --bone-dot:#5E5341;
   --tooth:#F1F3F8; --tooth-edge:#7F88A6; --crown:#FBFDFF;
@@ -359,3 +359,9 @@ body.patient .staff-only{display:none!important}
 .num.rpl{fill:var(--rplC);font-weight:700}
 .tag.rpl{background:var(--rpl-soft);color:var(--rplC)}
 .sidehead{display:flex;justify-content:space-between;align-items:center;gap:10px}
+
+/* mevcut ağız: kronlu / implantlı diş, pterygoid (P) ve zygomatic (Z) işareti */
+.exCrown{fill:var(--ex-fill);stroke:var(--exC);stroke-width:1.6}
+.exImp{fill:var(--exC);stroke:var(--surface);stroke-width:1.2}
+.impL{font:800 8px var(--f-display);fill:#fff;text-anchor:middle;dominant-baseline:middle;pointer-events:none}
+.tools button:disabled{opacity:.4;cursor:not-allowed}
